@@ -1,5 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import './App.css';
+import { useRef } from 'react';
+import { fetchTournamentState, saveTournamentState } from '../shared/tournamentApi.js';
 
 const STORAGE_KEY = 'archery_v32_final_data_v5';
 const ROUNDS = [1, 2, 3, 4, 5, 6];
@@ -45,6 +47,7 @@ const playoffStageKeysByMode = {
 
 const tabs = [
   { id: 'players', label: 'Катышуучулар' },
+  { id: 'playerData', label: 'Оюнчу тизмеси' },
   { id: 'journal', label: 'Журнал' },
   { id: 'rating', label: 'Рейтинг' },
   { id: 'playoff', label: 'Плей-офф' },
@@ -130,6 +133,8 @@ const normalizeStoredPlayers = (players, savedBook = {}) => {
 
     return {
       ...player,
+      phone: player.phone ?? '',
+      gender: player.gender ?? '',
       entryNumber: player.entryNumber ?? fallbackNumber,
     };
   });
@@ -144,28 +149,31 @@ const isEmptyBracket = (bracket) =>
   bracket.quarterFinals.length === 0 &&
   bracket.semiFinals.length === 0;
 
+const parseStoredState = (raw) => {
+  if (!raw) {
+    return DEFAULT_STATE;
+  }
+
+  const parsed = JSON.parse(raw);
+  const normalizedPlayers = normalizeStoredPlayers(parsed.players || [], parsed.playerNumberBook || {});
+  const playerNumberBook = buildPlayerNumberBook(normalizedPlayers, parsed.playerNumberBook || {});
+
+  return {
+    ...DEFAULT_STATE,
+    ...parsed,
+    players: normalizedPlayers,
+    playerNumberBook,
+    bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : EMPTY_BRACKET,
+  };
+};
+
 const loadInitialState = () => {
   if (typeof window === 'undefined') {
     return DEFAULT_STATE;
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return DEFAULT_STATE;
-    }
-
-    const parsed = JSON.parse(raw);
-    const normalizedPlayers = normalizeStoredPlayers(parsed.players || [], parsed.playerNumberBook || {});
-    const playerNumberBook = buildPlayerNumberBook(normalizedPlayers, parsed.playerNumberBook || {});
-
-    return {
-      ...DEFAULT_STATE,
-      ...parsed,
-      players: normalizedPlayers,
-      playerNumberBook,
-      bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : EMPTY_BRACKET,
-    };
+    return parseStoredState(window.localStorage.getItem(STORAGE_KEY));
   } catch {
     return DEFAULT_STATE;
   }
@@ -442,13 +450,32 @@ const App = () => {
   const [scores, setScores] = useState(initialState.scores);
   const [activeTab, setActiveTab] = useState('players');
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerPhone, setNewPlayerPhone] = useState('');
+  const [newPlayerGender, setNewPlayerGender] = useState('male');
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPlayersListExpanded, setIsPlayersListExpanded] = useState(false);
   const [playoffMode, setPlayoffMode] = useState(initialState.playoffMode);
   const [playoffStage, setPlayoffStage] = useState(initialState.playoffStage);
   const [bracket, setBracket] = useState(initialState.bracket);
   const [printTarget, setPrintTarget] = useState(null);
+  const isRemoteHydratedRef = useRef(false);
+  const skipNextRemoteSaveRef = useRef(false);
   const reportDate = new Date().toLocaleDateString('ru-RU');
+
+  const applyTournamentState = (nextState) => {
+    setTournamentName(nextState.tournamentName);
+    setLocation(nextState.location);
+    setCategory(nextState.category);
+    setHeadReferee(nextState.headReferee);
+    setHeadSecretary(nextState.headSecretary);
+    setPlayers(nextState.players);
+    setPlayerNumberBook(nextState.playerNumberBook);
+    setScores(nextState.scores || {});
+    setBracket(nextState.bracket);
+    setPlayoffStage(nextState.playoffStage);
+    setPlayoffMode(nextState.playoffMode);
+  };
 
   useEffect(() => {
     const nextState = {
@@ -481,10 +508,25 @@ const App = () => {
 
     if (isPristine) {
       window.localStorage.removeItem(STORAGE_KEY);
+      if (!skipNextRemoteSaveRef.current && isRemoteHydratedRef.current) {
+        saveTournamentState(DEFAULT_STATE).catch(() => {});
+      }
+      skipNextRemoteSaveRef.current = false;
       return;
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+
+    if (skipNextRemoteSaveRef.current) {
+      skipNextRemoteSaveRef.current = false;
+      return;
+    }
+
+    if (!isRemoteHydratedRef.current) {
+      return;
+    }
+
+    saveTournamentState(nextState).catch(() => {});
   }, [tournamentName, location, category, headReferee, headSecretary, players, playerNumberBook, scores, bracket, playoffStage, playoffMode]);
 
   useEffect(() => {
@@ -498,6 +540,42 @@ const App = () => {
 
     window.addEventListener('afterprint', handleAfterPrint);
     return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    const syncFromServer = async () => {
+      try {
+        const nextState = parseStoredState(JSON.stringify(await fetchTournamentState()));
+        if (!isMounted) {
+          return;
+        }
+
+        skipNextRemoteSaveRef.current = true;
+        applyTournamentState(nextState);
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+        isRemoteHydratedRef.current = true;
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        isRemoteHydratedRef.current = true;
+      }
+    };
+
+    syncFromServer();
+    const intervalId = window.setInterval(syncFromServer, 3000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   const calculateTotal = (playerId) => {
@@ -514,6 +592,19 @@ const App = () => {
   const visiblePlayers = isPlayersListExpanded ? orderedPlayers : orderedPlayers.slice(0, playersPreviewCount);
   const hiddenPlayersCount = Math.max(orderedPlayers.length - playersPreviewCount, 0);
   const playerPositionMap = Object.fromEntries(orderedPlayers.map((player, index) => [player.id, index + 1]));
+  const normalizedPlayerSearchQuery = playerSearchQuery.trim().toLocaleLowerCase();
+  const filteredPlayerData = orderedPlayers.filter((player) => {
+    if (!normalizedPlayerSearchQuery) {
+      return true;
+    }
+
+    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'аял' : '';
+
+    return [player.name || '', player.phone || '', genderLabel]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(normalizedPlayerSearchQuery);
+  });
   const playoffStages = visibleStageKeys.map((stageKey) => ({
     stageKey,
     title: playoffStageTitles[stageKey] || stageMeta[stageKey].label,
@@ -532,6 +623,7 @@ const App = () => {
   const addPlayer = () => {
     const name = newPlayerName.trim();
     if (!name) return;
+    const phone = newPlayerPhone.trim();
 
     const normalizedName = normalizePlayerName(name);
     const existingNumber = playerNumberBook[normalizedName];
@@ -543,9 +635,14 @@ const App = () => {
       [normalizedName]: entryNumber,
     }));
     setPlayers((prev) =>
-      sortPlayersByEntryNumber([...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, entryNumber }]),
+      sortPlayersByEntryNumber([
+        ...prev,
+        { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, phone, gender: newPlayerGender, entryNumber },
+      ]),
     );
     setNewPlayerName('');
+    setNewPlayerPhone('');
+    setNewPlayerGender('male');
   };
 
   const removePlayer = (playerId) => {
@@ -732,6 +829,8 @@ const App = () => {
     setPlayoffMode(DEFAULT_STATE.playoffMode);
     setActiveTab('players');
     setNewPlayerName('');
+    setNewPlayerPhone('');
+    setNewPlayerGender('male');
     setIsMenuOpen(false);
     setIsPlayersListExpanded(false);
     setPrintTarget(null);
@@ -872,19 +971,57 @@ const App = () => {
                 </div>
               </div>
 
-              <div className="add-player">
-                <input
-                  className="field__control"
-                  placeholder="Катышуучунун аты-жөнү"
-                  value={newPlayerName}
-                  onChange={(event) => setNewPlayerName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') addPlayer();
-                  }}
-                />
-                <button type="button" onClick={addPlayer} className="primary-button">
-                  Кошуу
-                </button>
+              <div className="add-player-panel">
+                <div className="add-player-grid">
+                  <input
+                    className="field__control"
+                    placeholder="Катышуучунун аты-жөнү"
+                    value={newPlayerName}
+                    onChange={(event) => setNewPlayerName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') addPlayer();
+                    }}
+                  />
+                  <input
+                    className="field__control"
+                    placeholder="+996"
+                    value={newPlayerPhone}
+                    onChange={(event) => setNewPlayerPhone(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') addPlayer();
+                    }}
+                  />
+                </div>
+
+                <div className="add-player-actions">
+                  <div className="player-gender-switch">
+                    <label className="player-gender-option">
+                      <input
+                        type="radio"
+                        name="admin-player-gender"
+                        value="male"
+                        checked={newPlayerGender === 'male'}
+                        onChange={(event) => setNewPlayerGender(event.target.value)}
+                      />
+                      <span>Эркек</span>
+                    </label>
+
+                    <label className="player-gender-option">
+                      <input
+                        type="radio"
+                        name="admin-player-gender"
+                        value="female"
+                        checked={newPlayerGender === 'female'}
+                        onChange={(event) => setNewPlayerGender(event.target.value)}
+                      />
+                      <span>Аял</span>
+                    </label>
+                  </div>
+
+                  <button type="button" onClick={addPlayer} className="primary-button">
+                    Кошуу
+                  </button>
+                </div>
               </div>
 
               <div className="players-list">
@@ -892,9 +1029,13 @@ const App = () => {
 
                 {visiblePlayers.map((player, index) => (
                   <article key={player.id} className="player-card">
-                    <div>
+                    <div className="player-card__content">
                       <p className="player-card__index">№ {playerPositionMap[player.id] ?? index + 1}</p>
                       <h4 className="player-card__name">{player.name}</h4>
+                      <p className="player-card__meta">{player.phone || 'Телефон кошула элек'}</p>
+                      <p className="player-card__meta">
+                        {player.gender === 'male' ? 'Эркек' : player.gender === 'female' ? 'Аял' : 'Жынысы кошула элек'}
+                      </p>
                     </div>
                     <button type="button" onClick={() => removePlayer(player.id)} className="icon-button" aria-label="Катышуучуну өчүрүү">
                       <TrashIcon size={16} />
@@ -1045,6 +1186,71 @@ const App = () => {
             <button type="button" onClick={() => handlePrintSheet('journal')} className="primary-button">
               <PrinterIcon size={18} /> Журналды PDF кылып чыгаруу
             </button>
+          </section>
+        )}
+
+        {activeTab === 'playerData' && (
+          <section className="panel">
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">Маалыматтар</p>
+                <h3 className="panel__title">Оюнчулардын толук тизмеси</h3>
+              </div>
+              <div className="pill">
+                <UsersIcon size={16} />
+                {orderedPlayers.length}
+              </div>
+            </div>
+
+            <div className="player-search">
+              <input
+                className="field__control"
+                placeholder="Оюнчуну издөө: аты, телефон же жынысы"
+                value={playerSearchQuery}
+                onChange={(event) => setPlayerSearchQuery(event.target.value)}
+              />
+            </div>
+
+            <div className="player-data-list">
+              {filteredPlayerData.length > 0 ? (
+                filteredPlayerData.map((player, index) => (
+                  <article key={player.id} className="player-data-card">
+                    <div className="player-data-card__top">
+                      <div className="player-data-badge">{index + 1}</div>
+                      <div className="player-data-card__title">
+                        <h4>{player.name}</h4>
+                        <p>Оюнчунун сакталган маалыматы</p>
+                      </div>
+                    </div>
+
+                    <div className="player-data-card__grid">
+                      <div className="player-data-field">
+                        <span>Аты-жөнү</span>
+                        <strong>{player.name}</strong>
+                      </div>
+                      <div className="player-data-field">
+                        <span>Телефон номери</span>
+                        <strong>{player.phone || 'Азырынча кошулган эмес'}</strong>
+                      </div>
+                      <div className="player-data-field">
+                        <span>Жынысы</span>
+                        <strong>
+                          {player.gender === 'male'
+                            ? 'Эркек'
+                            : player.gender === 'female'
+                              ? 'Аял'
+                              : player.gender || 'Азырынча кошулган эмес'}
+                        </strong>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : orderedPlayers.length > 0 ? (
+                <div className="empty-state">Мындай оюнчу табылган жок.</div>
+              ) : (
+                <div className="empty-state">Оюнчулардын сакталган тизмеси азырынча бош.</div>
+              )}
+            </div>
           </section>
         )}
 

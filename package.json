@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:admin": "vite --open /admin/",
+    "dev:user": "vite --open /",
+    "dev:server": "node backend/server.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
