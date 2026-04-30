@@ -1,7 +1,6 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import './App.css';
-import { useRef } from 'react';
-import { fetchTournamentState, saveTournamentState } from '../shared/tournamentApi.js';
+import { fetchTournamentState, saveTournamentState, registerTournamentPlayer } from '../shared/tournamentApi.js';
 
 const STORAGE_KEY = 'archery_v32_final_data_v5';
 const ROUNDS = [1, 2, 3, 4, 5, 6];
@@ -620,29 +619,32 @@ const App = () => {
   const hasFinalMatches = Boolean(bracket.final12 || bracket.final34 || playoffStage === 'final');
   const reportSheetLayout = getReportSheetLayout(playoffMode, bracketStagesForSheet, hasFinalMatches);
 
-  const addPlayer = () => {
+  const addPlayer = async () => {
     const name = newPlayerName.trim();
     if (!name) return;
     const phone = newPlayerPhone.trim();
 
-    const normalizedName = normalizePlayerName(name);
-    const existingNumber = playerNumberBook[normalizedName];
-    const highestNumber = Math.max(0, ...Object.values(playerNumberBook).map((value) => Number(value) || 0));
-    const entryNumber = existingNumber || highestNumber + 1;
+    try {
+      // Отправляем данные на сервер
+      const nextState = parseStoredState(JSON.stringify(await registerTournamentPlayer({
+        name,
+        phone,
+        gender: newPlayerGender,
+      })));
 
-    setPlayerNumberBook((prev) => ({
-      ...prev,
-      [normalizedName]: entryNumber,
-    }));
-    setPlayers((prev) =>
-      sortPlayersByEntryNumber([
-        ...prev,
-        { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, phone, gender: newPlayerGender, entryNumber },
-      ]),
-    );
-    setNewPlayerName('');
-    setNewPlayerPhone('');
-    setNewPlayerGender('male');
+      // Обновляем локальное состояние
+      skipNextRemoteSaveRef.current = true;
+      applyTournamentState(nextState);
+      
+      // Очищаем форму
+      setNewPlayerName('');
+      setNewPlayerPhone('');
+      setNewPlayerGender('male');
+    } catch (error) {
+      // Показываем ошибку пользователю
+      alert(`Ошибка при добавлении игрока: ${error.message || 'Неизвестная ошибка'}`);
+      console.error('Failed to add player:', error);
+    }
   };
 
   const removePlayer = (playerId) => {

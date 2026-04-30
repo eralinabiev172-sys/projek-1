@@ -1,0 +1,31 @@
+{
+  "tournamentName": "Жаа атуу боюнча турнир",
+  "location": "Чолпон-Ата, 2026-жыл",
+  "category": "Классикалык жаа, 50 метр, эркектер",
+  "headReferee": "",
+  "headSecretary": "",
+  "players": [
+    {
+      "id": "1777528081253-0ildmn",
+      "name": "wfewfewf",
+      "phone": "3222353325",
+      "gender": "male",
+      "entryNumber": 1
+    }
+  ],
+  "scores": {},
+  "bracket": {
+    "roundOf32": [],
+    "roundOf16": [],
+    "quarterFinals": [],
+    "semiFinals": [],
+    "final12": null,
+    "final34": null,
+    "winners": []
+  },
+  "playoffStage": "none",
+  "playoffMode": 16,
+  "playerNumberBook": {
+    "wfewfewf": 1
+  }
+}

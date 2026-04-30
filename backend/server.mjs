@@ -99,7 +99,7 @@ const readBody = async (request) =>
   })
 
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
-const isValidPhone = (value) => /^\d{1,10}$/.test(value)
+const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
 
 const registerPlayer = async (payload) => {
   const currentState = await readState()
@@ -111,16 +111,20 @@ const registerPlayer = async (payload) => {
     throw new Error('Аты-жөнү туура эмес.')
   }
 
-  if (!phone || !isValidPhone(phone)) {
+  if (phone && !isValidPhone(phone)) {
     throw new Error('Телефон номери туура эмес.')
   }
 
   const normalizedName = normalizePlayerName(name)
   const existsByName = currentState.players.some((player) => normalizePlayerName(player.name || '') === normalizedName)
-  const existsByPhone = currentState.players.some((player) => sanitizePhone(player.phone) === phone)
+  const existsByPhone = phone && currentState.players.some((player) => sanitizePhone(player.phone) === phone)
 
-  if (existsByName || existsByPhone) {
-    throw new Error('Мындай катышуучу мурун катталган.')
+  if (existsByName) {
+    throw new Error('Мындай аттагы катышуучу мурун катталган.')
+  }
+
+  if (existsByPhone) {
+    throw new Error('Мындай телефон номери менен катышуучу мурун катталган.')
   }
 
   const highestNumber = Math.max(0, ...Object.values(currentState.playerNumberBook || {}).map((value) => Number(value) || 0))
