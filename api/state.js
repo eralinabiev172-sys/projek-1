@@ -1,9 +1,7 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
-import { tmpdir } from 'os'
+import { createClient } from '@supabase/supabase-js'
 
-const DATA_DIR = join(tmpdir(), 'tournament-data')
-const DATA_FILE = join(DATA_DIR, 'tournament-state.json')
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_ANON_KEY
 
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
@@ -27,30 +25,35 @@ const DEFAULT_STATE = {
   playerNumberBook: {},
 }
 
-const ensureStorage = async () => {
-  await mkdir(DATA_DIR, { recursive: true })
-  try {
-    await readFile(DATA_FILE, 'utf8')
-  } catch {
-    await writeFile(DATA_FILE, JSON.stringify(DEFAULT_STATE, null, 2), 'utf8')
-  }
-}
+// Преобразование из snake_case (БД) в camelCase (JS)
+const dbToJs = (dbRow) => ({
+  tournamentName: dbRow.tournament_name,
+  location: dbRow.location,
+  category: dbRow.category,
+  headReferee: dbRow.head_referee,
+  headSecretary: dbRow.head_secretary,
+  players: dbRow.players || [],
+  scores: dbRow.scores || {},
+  bracket: dbRow.bracket || DEFAULT_STATE.bracket,
+  playoffStage: dbRow.playoff_stage,
+  playoffMode: dbRow.playoff_mode,
+  playerNumberBook: dbRow.player_number_book || {},
+})
 
-const readState = async () => {
-  await ensureStorage()
-  try {
-    const raw = await readFile(DATA_FILE, 'utf8')
-    return JSON.parse(raw)
-  } catch {
-    return { ...DEFAULT_STATE }
-  }
-}
-
-const writeState = async (state) => {
-  await ensureStorage()
-  await writeFile(DATA_FILE, JSON.stringify(state, null, 2), 'utf8')
-  return state
-}
+// Преобразование из camelCase (JS) в snake_case (БД)
+const jsToDb = (jsState) => ({
+  tournament_name: jsState.tournamentName,
+  location: jsState.location,
+  category: jsState.category,
+  head_referee: jsState.headReferee,
+  head_secretary: jsState.headSecretary,
+  players: jsState.players,
+  scores: jsState.scores,
+  bracket: jsState.bracket,
+  playoff_stage: jsState.playoffStage,
+  playoff_mode: jsState.playoffMode,
+  player_number_book: jsState.playerNumberBook,
+})
 
 export default async function handler(req, res) {
   // CORS headers
@@ -62,19 +65,65 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true })
   }
 
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(500).json({ error: 'Supabase not configured' })
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey)
+
   try {
     if (req.method === 'GET') {
-      const state = await readState()
-      return res.status(200).json(state)
+      // Получение состояния из БД
+      const { data, error } = await supabase
+        .from('tournament_state')
+        .select('*')
+        .eq('id', 'main')
+        .single()
+
+      if (error) {
+        // Если записи нет, создаем её
+        if (error.code === 'PGRST116') {
+          const { data: newData, error: insertError } = await supabase
+            .from('tournament_state')
+            .insert([{ id: 'main', ...jsToDb(DEFAULT_STATE) }])
+            .select()
+            .single()
+
+          if (insertError) {
+            console.error('Insert error:', insertError)
+            return res.status(500).json({ error: insertError.message })
+          }
+
+          return res.status(200).json(dbToJs(newData))
+        }
+
+        console.error('Select error:', error)
+        return res.status(500).json({ error: error.message })
+      }
+
+      return res.status(200).json(dbToJs(data))
     }
 
     if (req.method === 'PUT') {
+      // Обновление состояния в БД
       const nextState = {
         ...DEFAULT_STATE,
         ...req.body,
       }
-      await writeState(nextState)
-      return res.status(200).json(nextState)
+
+      const { data, error } = await supabase
+        .from('tournament_state')
+        .update(jsToDb(nextState))
+        .eq('id', 'main')
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Update error:', error)
+        return res.status(500).json({ error: error.message })
+      }
+
+      return res.status(200).json(dbToJs(data))
     }
 
     return res.status(405).json({ error: 'Method not allowed' })

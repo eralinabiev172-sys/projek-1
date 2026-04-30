@@ -1,19 +1,24 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
-import { tmpdir } from 'os'
+import { createClient } from '@supabase/supabase-js'
 
-const DATA_DIR = join(tmpdir(), 'tournament-data')
-const DATA_FILE = join(DATA_DIR, 'tournament-state.json')
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_ANON_KEY
 
-const DEFAULT_STATE = {
-  tournamentName: 'Жаа атуу боюнча турнир',
-  location: 'Чолпон-Ата, 2026-жыл',
-  category: 'Классикалык жаа, 50 метр, эркектер',
-  headReferee: '',
-  headSecretary: '',
-  players: [],
-  scores: {},
-  bracket: {
+const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
+const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
+const sanitizePlayerName = (value) => String(value || '').replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ').trim()
+const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
+const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
+
+// Преобразование из snake_case (БД) в camelCase (JS)
+const dbToJs = (dbRow) => ({
+  tournamentName: dbRow.tournament_name,
+  location: dbRow.location,
+  category: dbRow.category,
+  headReferee: dbRow.head_referee,
+  headSecretary: dbRow.head_secretary,
+  players: dbRow.players || [],
+  scores: dbRow.scores || {},
+  bracket: dbRow.bracket || {
     roundOf32: [],
     roundOf16: [],
     quarterFinals: [],
@@ -22,41 +27,10 @@ const DEFAULT_STATE = {
     final34: null,
     winners: [],
   },
-  playoffStage: 'none',
-  playoffMode: 16,
-  playerNumberBook: {},
-}
-
-const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
-const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
-const sanitizePlayerName = (value) => String(value || '').replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ').trim()
-const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
-const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
-
-const ensureStorage = async () => {
-  await mkdir(DATA_DIR, { recursive: true })
-  try {
-    await readFile(DATA_FILE, 'utf8')
-  } catch {
-    await writeFile(DATA_FILE, JSON.stringify(DEFAULT_STATE, null, 2), 'utf8')
-  }
-}
-
-const readState = async () => {
-  await ensureStorage()
-  try {
-    const raw = await readFile(DATA_FILE, 'utf8')
-    return JSON.parse(raw)
-  } catch {
-    return { ...DEFAULT_STATE }
-  }
-}
-
-const writeState = async (state) => {
-  await ensureStorage()
-  await writeFile(DATA_FILE, JSON.stringify(state, null, 2), 'utf8')
-  return state
-}
+  playoffStage: dbRow.playoff_stage,
+  playoffMode: dbRow.playoff_mode,
+  playerNumberBook: dbRow.player_number_book || {},
+})
 
 export default async function handler(req, res) {
   // CORS headers
@@ -72,10 +46,16 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(500).json({ error: 'Supabase not configured' })
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey)
+
   try {
     const { name: rawName, phone: rawPhone, gender } = req.body
 
-    const currentState = await readState()
+    // Валидация
     const name = sanitizePlayerName(rawName)
     const phone = sanitizePhone(rawPhone)
     const playerGender = gender === 'female' ? 'female' : 'male'
@@ -88,9 +68,28 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Телефон номери туура эмес.' })
     }
 
+    // Получение текущего состояния
+    const { data: currentData, error: fetchError } = await supabase
+      .from('tournament_state')
+      .select('*')
+      .eq('id', 'main')
+      .single()
+
+    if (fetchError) {
+      console.error('Fetch error:', fetchError)
+      return res.status(500).json({ error: fetchError.message })
+    }
+
+    const currentState = dbToJs(currentData)
+
+    // Проверка на дубликаты
     const normalizedName = normalizePlayerName(name)
-    const existsByName = currentState.players.some((player) => normalizePlayerName(player.name || '') === normalizedName)
-    const existsByPhone = phone && currentState.players.some((player) => sanitizePhone(player.phone) === phone)
+    const existsByName = currentState.players.some(
+      (player) => normalizePlayerName(player.name || '') === normalizedName
+    )
+    const existsByPhone = phone && currentState.players.some(
+      (player) => sanitizePhone(player.phone) === phone
+    )
 
     if (existsByName) {
       return res.status(400).json({ error: 'Мындай аттагы катышуучу мурун катталган.' })
@@ -100,23 +99,44 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Мындай телефон номери менен катышуучу мурун катталган.' })
     }
 
-    const highestNumber = Math.max(0, ...Object.values(currentState.playerNumberBook || {}).map((value) => Number(value) || 0))
+    // Создание нового игрока
+    const highestNumber = Math.max(
+      0,
+      ...Object.values(currentState.playerNumberBook || {}).map((value) => Number(value) || 0)
+    )
     const entryNumber = highestNumber + 1
 
-    const nextState = {
-      ...currentState,
-      players: [
-        ...currentState.players,
-        { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, phone, gender: playerGender, entryNumber },
-      ],
-      playerNumberBook: {
-        ...(currentState.playerNumberBook || {}),
-        [normalizedName]: entryNumber,
-      },
+    const newPlayer = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      phone,
+      gender: playerGender,
+      entryNumber,
     }
 
-    await writeState(nextState)
-    return res.status(200).json(nextState)
+    // Обновление состояния
+    const updatedPlayers = [...currentState.players, newPlayer]
+    const updatedPlayerNumberBook = {
+      ...(currentState.playerNumberBook || {}),
+      [normalizedName]: entryNumber,
+    }
+
+    const { data: updatedData, error: updateError } = await supabase
+      .from('tournament_state')
+      .update({
+        players: updatedPlayers,
+        player_number_book: updatedPlayerNumberBook,
+      })
+      .eq('id', 'main')
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Update error:', updateError)
+      return res.status(500).json({ error: updateError.message })
+    }
+
+    return res.status(200).json(dbToJs(updatedData))
   } catch (error) {
     console.error('Error registering player:', error)
     return res.status(500).json({ error: error.message || 'Internal server error' })
