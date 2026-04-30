@@ -11,6 +11,13 @@
       "phone": "3222353325",
       "gender": "male",
       "entryNumber": 1
+    },
+    {
+      "id": "1777528808057-1qcl1c",
+      "name": "wfewfewg",
+      "phone": "3222353327",
+      "gender": "male",
+      "entryNumber": 2
     }
   ],
   "scores": {},
@@ -26,6 +33,7 @@
   "playoffStage": "none",
   "playoffMode": 16,
   "playerNumberBook": {
-    "wfewfewf": 1
+    "wfewfewf": 1,
+    "wfewfewg": 2
   }
 }
