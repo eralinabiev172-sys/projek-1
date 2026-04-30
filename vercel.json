@@ -1,26 +1,24 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "backend/server.mjs",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "backend/server.mjs"
+      "src": "/api/health",
+      "dest": "/api/health.js"
+    },
+    {
+      "src": "/api/state",
+      "dest": "/api/state.js"
+    },
+    {
+      "src": "/api/register-player",
+      "dest": "/api/register-player.js"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
-      "dest": "/$1"
+      "dest": "/index.html"
     }
   ]
 }
