@@ -4,22 +4,7 @@
   "category": "Классикалык жаа, 50 метр, эркектер",
   "headReferee": "",
   "headSecretary": "",
-  "players": [
-    {
-      "id": "1777528081253-0ildmn",
-      "name": "wfewfewf",
-      "phone": "3222353325",
-      "gender": "male",
-      "entryNumber": 1
-    },
-    {
-      "id": "1777528808057-1qcl1c",
-      "name": "wfewfewg",
-      "phone": "3222353327",
-      "gender": "male",
-      "entryNumber": 2
-    }
-  ],
+  "players": [],
   "scores": {},
   "bracket": {
     "roundOf32": [],
@@ -33,7 +18,16 @@
   "playoffStage": "none",
   "playoffMode": 16,
   "playerNumberBook": {
-    "wfewfewf": 1,
-    "wfewfewg": 2
-  }
+    "wfewfewf": 3,
+    "wfewfewg": 2,
+    "wqfaff": 4
+  },
+  "rounds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ]
 }

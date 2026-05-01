@@ -1,6 +1,4 @@
-const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:8787/api' : '/api'
-
-// Для production используем serverless функции Vercel
+const API_BASE = '/api'
 
 const request = async (path, options = {}) => {
   const response = await fetch(`${API_BASE}${path}`, {
