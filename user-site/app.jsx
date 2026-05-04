@@ -286,6 +286,7 @@ function App() {
     [registeredPlayer, tournamentState.players],
   )
   const currentRoundScore = selectedPlayer ? tournamentState.scores[selectedPlayer.id]?.[activeScoreRound] ?? '' : ''
+  const hasSubmittedCurrentRound = currentRoundScore !== '' && currentRoundScore !== null && currentRoundScore !== undefined
   const isRegistered = Boolean(selectedPlayer)
   const visibleSections = isRegistered
     ? sections.filter((section) => section.id !== 'register' && section.id !== 'login')
@@ -466,6 +467,11 @@ function App() {
 
     if (scoreForm.score === '') {
       setScoreMessage('Упайды жазыңыз.')
+      return
+    }
+
+    if (hasSubmittedCurrentRound) {
+      setScoreMessage(`Score for this round is already locked: ${currentRoundScore}. Only the judge can change it.`)
       return
     }
 
@@ -797,10 +803,11 @@ function App() {
                 <input
                   name="score"
                   className="field__control"
-                  value={scoreForm.score}
+                  value={hasSubmittedCurrentRound ? String(currentRoundScore) : scoreForm.score}
                   onChange={handleScoreChange}
                   inputMode="numeric"
                   maxLength={3}
+                  disabled={hasSubmittedCurrentRound}
                   required
                 />
               </label>
@@ -811,7 +818,7 @@ function App() {
                   : 'Адегенде Катталуу бөлүмүндө атыңызды сактаңыз. Ошондон кийин бул жерде ат автоматтык чыгат.'}
               </div>
 
-              <button type="submit" className="primary-button field--full">
+              <button type="submit" className="primary-button field--full" disabled={hasSubmittedCurrentRound}>
                 Упайды жөнөтүү
               </button>
             </form>

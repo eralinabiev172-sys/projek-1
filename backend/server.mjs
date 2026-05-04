@@ -106,6 +106,7 @@ const readBody = async (request) =>
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
 const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= 999
+const isScoreInputDigitsOnly = (value) => /^\d{1,3}$/.test(String(value || '').trim())
 const normalizeScoreSubmission = (value) => ({
   activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
   entries: Array.isArray(value?.entries) ? value.entries : [],
@@ -157,7 +158,8 @@ const submitPlayerScore = async (payload) => {
   const currentState = await readState()
   const playerId = String(payload.playerId || '').trim()
   const phone = sanitizePhone(payload.phone)
-  const score = Number.parseInt(payload.score, 10)
+  const rawScore = String(payload.score || '').trim()
+  const score = Number.parseInt(rawScore, 10)
   const scoreSubmission = normalizeScoreSubmission(currentState.scoreSubmission)
   const activeRound = scoreSubmission.activeRound
 
@@ -169,7 +171,7 @@ const submitPlayerScore = async (payload) => {
     throw new Error('Телефон номери туура эмес.')
   }
 
-  if (!isValidScoreValue(score)) {
+  if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
     throw new Error('Упай 0дон 999га чейинки сан болушу керек.')
   }
 
@@ -180,6 +182,11 @@ const submitPlayerScore = async (payload) => {
 
   if (sanitizePhone(player.phone) !== phone) {
     throw new Error('Телефон номери дал келген жок.')
+  }
+
+  const existingRoundScore = currentState.scores?.[player.id]?.[activeRound]
+  if (existingRoundScore !== undefined && existingRoundScore !== null && existingRoundScore !== '') {
+    throw new Error('Бул айлампа үчүн упай мурунтан эле сакталган. Аны эми калыс гана өзгөртө алат.')
   }
 
   const nextEntry = {

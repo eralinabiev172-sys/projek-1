@@ -55,6 +55,7 @@ const dbToJs = (dbRow) => ({
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
 const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= 999
+const isScoreInputDigitsOnly = (value) => /^\d{1,3}$/.test(String(value || '').trim())
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -78,7 +79,8 @@ export default async function handler(req, res) {
   try {
     const playerId = String(req.body?.playerId || '').trim()
     const phone = sanitizePhone(req.body?.phone)
-    const score = Number.parseInt(req.body?.score, 10)
+    const rawScore = String(req.body?.score || '').trim()
+    const score = Number.parseInt(rawScore, 10)
 
     if (!playerId) {
       return res.status(400).json({ error: 'Оюнчу тандалган жок.' })
@@ -88,7 +90,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Телефон номери туура эмес.' })
     }
 
-    if (!isValidScoreValue(score)) {
+    if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
       return res.status(400).json({ error: 'Упай 0дөн 999га чейинки сан болушу керек.' })
     }
 
@@ -113,6 +115,11 @@ export default async function handler(req, res) {
 
     if (sanitizePhone(player.phone) !== phone) {
       return res.status(400).json({ error: 'Телефон номери дал келген жок.' })
+    }
+
+    const existingRoundScore = currentState.scores?.[player.id]?.[activeRound]
+    if (existingRoundScore !== undefined && existingRoundScore !== null && existingRoundScore !== '') {
+      return res.status(409).json({ error: 'Бул айлампа үчүн упай мурунтан эле сакталган. Аны эми калыс гана өзгөртө алат.' })
     }
 
     const updatedScores = {
