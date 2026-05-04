@@ -36,6 +36,7 @@ const DEFAULT_STATE = {
 
 const sections = [
   { id: 'register', label: 'Катталуу' },
+  { id: 'login', label: 'Кирүү' },
   { id: 'rating', label: 'Даража' },
   { id: 'playoff', label: 'Жеке элек' },
 ]
@@ -53,6 +54,10 @@ const initialRegistrationForm = {
   fullName: '',
   phone: '',
   gender: 'male',
+}
+
+const initialLoginForm = {
+  fullName: '',
 }
 
 const initialScoreForm = {
@@ -82,6 +87,8 @@ const sanitizePlayerName = (value) => value.replace(/[^\p{L}\s'-]/gu, '').replac
 const sanitizePhone = (value) => value.replace(/\D/g, '').slice(0, 10)
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value.trim())
 const isValidPhone = (value) => /^\d+$/.test(value.trim())
+const findPlayerByName = (players, name) =>
+  players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(name))
 
 const createEmptyState = () => ({
   ...DEFAULT_STATE,
@@ -218,10 +225,13 @@ const TargetIcon = ({ size = 20 }) => (
 function App() {
   const [activeSection, setActiveSection] = useState('register')
   const [registrationMessage, setRegistrationMessage] = useState('')
+  const [loginMessage, setLoginMessage] = useState('')
   const [scoreMessage, setScoreMessage] = useState('')
   const [tournamentState, setTournamentState] = useState(createEmptyState)
+  const [hasLoadedTournamentState, setHasLoadedTournamentState] = useState(false)
   const [registeredPlayer, setRegisteredPlayer] = useState(loadRegisteredPlayer)
   const [registrationForm, setRegistrationForm] = useState(initialRegistrationForm)
+  const [loginForm, setLoginForm] = useState(initialLoginForm)
   const [scoreForm, setScoreForm] = useState(initialScoreForm)
 
   useEffect(() => {
@@ -232,6 +242,7 @@ function App() {
         const nextState = parseTournamentState(await fetchTournamentState())
         if (isMounted) {
           setTournamentState(nextState)
+          setHasLoadedTournamentState(true)
         }
       } catch {
         if (isMounted) {
@@ -277,8 +288,8 @@ function App() {
   const currentRoundScore = selectedPlayer ? tournamentState.scores[selectedPlayer.id]?.[activeScoreRound] ?? '' : ''
   const isRegistered = Boolean(selectedPlayer)
   const visibleSections = isRegistered
-    ? sections.filter((section) => section.id !== 'register')
-    : sections.filter((section) => section.id === 'register')
+    ? sections.filter((section) => section.id !== 'register' && section.id !== 'login')
+    : sections.filter((section) => section.id === 'register' || section.id === 'login')
 
   useEffect(() => {
     if (!selectedPlayer) {
@@ -297,22 +308,27 @@ function App() {
       return
     }
 
-    if (!selectedPlayer && tournamentState.players.length > 0) {
+    if (hasLoadedTournamentState && !selectedPlayer) {
       setRegisteredPlayer(null)
       clearRegisteredPlayer()
+      setRegistrationForm(initialRegistrationForm)
+      setLoginForm(initialLoginForm)
       setScoreForm(initialScoreForm)
+      setRegistrationMessage('')
+      setLoginMessage('')
+      setScoreMessage('')
     }
-  }, [registeredPlayer, selectedPlayer, tournamentState.players.length])
+  }, [hasLoadedTournamentState, registeredPlayer, selectedPlayer])
 
   useEffect(() => {
     if (isRegistered) {
-      if (activeSection === 'register') {
+      if (activeSection === 'register' || activeSection === 'login') {
         setActiveSection('rating')
       }
       return
     }
 
-    if (activeSection !== 'register') {
+    if (activeSection !== 'register' && activeSection !== 'login') {
       setActiveSection('register')
     }
   }, [activeSection, isRegistered])
@@ -331,6 +347,10 @@ function App() {
     }
 
     setRegistrationForm((current) => ({ ...current, [name]: value }))
+  }
+
+  const handleLoginChange = ({ target }) => {
+    setLoginForm({ fullName: sanitizePlayerName(target.value) })
   }
 
   const handleRegistrationSubmit = async (event) => {
@@ -369,7 +389,7 @@ function App() {
       )
 
       setTournamentState(nextState)
-      const savedPlayer = nextState.players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(fullName))
+      const savedPlayer = findPlayerByName(nextState.players, fullName)
       if (savedPlayer) {
         const identity = { playerId: savedPlayer.id, name: savedPlayer.name }
         setRegisteredPlayer(identity)
@@ -377,10 +397,47 @@ function App() {
         setActiveSection('rating')
       }
       setRegistrationForm(initialRegistrationForm)
+      setLoginForm({ fullName })
       setRegistrationMessage('Катталуу ийгиликтүү аяктады.')
     } catch (error) {
       setRegistrationMessage(error.message || 'Катталууну сактоо мүмкүн болгон жок.')
     }
+  }
+
+  const handleLoginSubmit = (event) => {
+    event.preventDefault()
+
+    if (registeredPlayer?.playerId) {
+      setLoginMessage(`Бул түзмөктө азыр ушул катышуучу кирген: ${registeredPlayer.name}.`)
+      return
+    }
+
+    const fullName = loginForm.fullName.trim()
+
+    if (!fullName) {
+      setLoginMessage('Атыңызды жазыңыз.')
+      return
+    }
+
+    if (!isValidPlayerName(fullName)) {
+      setLoginMessage('Аты-жөнү талаасына сандарды же башка белгилерди жазууга болбойт.')
+      return
+    }
+
+    const matchedPlayer = findPlayerByName(tournamentState.players, fullName)
+    if (!matchedPlayer) {
+      setLoginMessage('Мындай аттагы катышуучу табылган жок. Адегенде катталуу керек.')
+      return
+    }
+
+    const identity = { playerId: matchedPlayer.id, name: matchedPlayer.name }
+    setRegisteredPlayer(identity)
+    saveRegisteredPlayer(identity)
+    setRegistrationForm((current) => ({ ...current, fullName: matchedPlayer.name }))
+    setLoginForm(initialLoginForm)
+    setRegistrationMessage('')
+    setLoginMessage(`Кош келиңиз, ${matchedPlayer.name}.`)
+    setActiveSection('rating')
   }
 
   const handleScoreChange = ({ target }) => {
@@ -433,8 +490,10 @@ function App() {
     setRegisteredPlayer(null)
     clearRegisteredPlayer()
     setRegistrationForm(initialRegistrationForm)
+    setLoginForm(initialLoginForm)
     setScoreForm(initialScoreForm)
     setRegistrationMessage('Эски катталуу бул түзмөктөн өчүрүлдү. Эми кайра жаңыдан катталсаңыз болот.')
+    setLoginMessage('')
     setScoreMessage('')
     setActiveSection('register')
   }
@@ -584,6 +643,47 @@ function App() {
             </div>
 
             {registrationMessage && <p className="message-line">{registrationMessage}</p>}
+          </section>
+        )}
+
+        {activeSection === 'login' && (
+          <section className="panel panel--narrow">
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">Кирүү</p>
+                <h3 className="panel__title">Мурда катталган катышуучунун кирүүсү</h3>
+              </div>
+              <div className="pill">Ыкчам</div>
+            </div>
+
+            <div className="info-strip">
+              <span>Эгер катышуучу мурда катталган болсо, аты менен эле кире алат.</span>
+              <span>Аты тизмедеги ат менен так дал келиши керек.</span>
+            </div>
+
+            <form className="form-grid" onSubmit={handleLoginSubmit}>
+              <label className="field field--full">
+                <span className="field__label">Аты-жөнү</span>
+                <input
+                  name="fullName"
+                  className="field__control"
+                  value={loginForm.fullName}
+                  onChange={handleLoginChange}
+                  autoComplete="name"
+                  required
+                />
+              </label>
+
+              <div className="note-card field--full">
+                Киргенден кийин жыйынтыкты, финалдык торду жана өз упайыңызды жөнөтүү бөлүмүн көрөсүз.
+              </div>
+
+              <button type="submit" className="primary-button field--full">
+                Кирүү
+              </button>
+            </form>
+
+            {loginMessage && <p className="message-line">{loginMessage}</p>}
           </section>
         )}
 
