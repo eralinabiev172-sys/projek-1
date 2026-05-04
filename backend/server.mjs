@@ -30,6 +30,10 @@ const DEFAULT_STATE = {
   playoffStage: 'none',
   playoffMode: 16,
   playerNumberBook: {},
+  scoreSubmission: {
+    activeRound: 1,
+    entries: [],
+  },
 }
 
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
@@ -59,6 +63,7 @@ const readState = async () => {
       players: Array.isArray(parsed.players) ? parsed.players : [],
       scores: parsed.scores || {},
       playerNumberBook: parsed.playerNumberBook || {},
+      scoreSubmission: normalizeScoreSubmission(parsed.scoreSubmission),
     }
   } catch {
     return { ...DEFAULT_STATE, bracket: { ...EMPTY_BRACKET } }
@@ -100,6 +105,11 @@ const readBody = async (request) =>
 
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
+const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= 999
+const normalizeScoreSubmission = (value) => ({
+  activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
+  entries: Array.isArray(value?.entries) ? value.entries : [],
+})
 
 const registerPlayer = async (payload) => {
   const currentState = await readState()
@@ -143,6 +153,63 @@ const registerPlayer = async (payload) => {
   return nextState
 }
 
+const submitPlayerScore = async (payload) => {
+  const currentState = await readState()
+  const playerId = String(payload.playerId || '').trim()
+  const phone = sanitizePhone(payload.phone)
+  const score = Number.parseInt(payload.score, 10)
+  const scoreSubmission = normalizeScoreSubmission(currentState.scoreSubmission)
+  const activeRound = scoreSubmission.activeRound
+
+  if (!playerId) {
+    throw new Error('Оюнчу тандалган жок.')
+  }
+
+  if (!phone || !isValidPhone(phone)) {
+    throw new Error('Телефон номери туура эмес.')
+  }
+
+  if (!isValidScoreValue(score)) {
+    throw new Error('Упай 0дон 999га чейинки сан болушу керек.')
+  }
+
+  const player = currentState.players.find((item) => item.id === playerId)
+  if (!player) {
+    throw new Error('Оюнчу табылган жок.')
+  }
+
+  if (sanitizePhone(player.phone) !== phone) {
+    throw new Error('Телефон номери дал келген жок.')
+  }
+
+  const nextEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    playerId: player.id,
+    playerName: player.name,
+    round: activeRound,
+    score,
+    submittedAt: new Date().toISOString(),
+  }
+
+  const nextState = {
+    ...currentState,
+    scores: {
+      ...currentState.scores,
+      [player.id]: {
+        ...(currentState.scores[player.id] || {}),
+        [activeRound]: score,
+      },
+    },
+    scoreSubmission: {
+      ...scoreSubmission,
+      entries: [nextEntry, ...scoreSubmission.entries].slice(0, 500),
+    },
+  }
+
+  await writeState(nextState)
+  return nextState
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`)
 
@@ -171,6 +238,7 @@ const server = createServer(async (request, response) => {
         players: Array.isArray(body.players) ? body.players : [],
         scores: body.scores || {},
         playerNumberBook: body.playerNumberBook || {},
+        scoreSubmission: normalizeScoreSubmission(body.scoreSubmission),
       }
       await writeState(nextState)
       sendJson(response, 200, nextState)
@@ -180,6 +248,12 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/register-player') {
       const body = await readBody(request)
       sendJson(response, 200, await registerPlayer(body))
+      return
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/player-score') {
+      const body = await readBody(request)
+      sendJson(response, 200, await submitPlayerScore(body))
       return
     }
 

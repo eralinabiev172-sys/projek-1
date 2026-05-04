@@ -6,18 +6,11 @@
   "headSecretary": "",
   "players": [
     {
-      "id": "1777654940218-pbmw88",
-      "name": "wfewfewf",
-      "phone": "3222353325",
-      "gender": "male",
-      "entryNumber": 8
-    },
-    {
-      "id": "1777655148047-d2mocv",
+      "id": "1777870797665-2t1475",
       "name": "wferfwefrg",
       "phone": "12442355",
       "gender": "male",
-      "entryNumber": 9
+      "entryNumber": 1
     }
   ],
   "scores": {},
@@ -33,13 +26,21 @@
   "playoffStage": "none",
   "playoffMode": 16,
   "playerNumberBook": {
-    "wfewfewf": 8,
-    "wfewfewg": 2,
-    "wqfaff": 4,
-    "wfewnmn": 6,
-    "ergrg": 7,
-    "wferfwefrg": 9
+    "wferfwefrg": 1
   },
+  "scoreSubmission": {
+    "activeRound": 1,
+    "entries": []
+  },
+  "playerDirectory": [
+    {
+      "id": "1777870797665-2t1475",
+      "name": "wferfwefrg",
+      "phone": "12442355",
+      "gender": "male",
+      "entryNumber": 1
+    }
+  ],
   "rounds": [
     1,
     2,

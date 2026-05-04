@@ -87,6 +87,12 @@
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
+.secondary-button {
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
 .tab-button {
   padding: 11px 16px;
   border-radius: 999px;
@@ -286,6 +292,28 @@
   background: linear-gradient(135deg, #0f172a, #2563eb);
   color: #fff;
   box-shadow: 0 14px 28px rgba(37, 99, 235, 0.18);
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 18px;
+  padding: 14px 18px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1d4ed8;
+}
+
+.secondary-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+}
+
+.action-row {
+  margin-top: 14px;
+  display: flex;
 }
 
 .message-line {

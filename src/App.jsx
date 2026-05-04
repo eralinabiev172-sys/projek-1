@@ -16,6 +16,11 @@ const EMPTY_BRACKET = {
   winners: [],
 };
 
+const DEFAULT_SCORE_SUBMISSION = {
+  activeRound: 1,
+  entries: [],
+};
+
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
   location: 'Чолпон-Ата, 2026-жыл',
@@ -23,11 +28,13 @@ const DEFAULT_STATE = {
   headReferee: '',
   headSecretary: '',
   players: [],
+  playerDirectory: [],
   scores: {},
   bracket: EMPTY_BRACKET,
   playoffStage: 'none',
   playoffMode: 16,
   playerNumberBook: {},
+  scoreSubmission: DEFAULT_SCORE_SUBMISSION,
 };
 
 const seedOrders = {
@@ -47,10 +54,10 @@ const playoffStageKeysByMode = {
 const tabs = [
   { id: 'players', label: 'Катышуучулар' },
   { id: 'playerData', label: 'Оюнчу тизмеси' },
-  { id: 'journal', label: 'Журнал' },
-  { id: 'rating', label: 'Рейтинг' },
-  { id: 'playoff', label: 'Плей-офф' },
-  { id: 'report', label: 'Отчет' },
+  { id: 'journal', label: 'Тандоо элек' },
+  { id: 'rating', label: 'Даража' },
+  { id: 'playoff', label: 'Жеке элек' },
+  { id: 'report', label: 'Отчёт' },
 ];
 
 const stageMeta = {
@@ -63,10 +70,10 @@ const stageMeta = {
 };
 
 const playoffStageTitles = {
-  roundOf32: '1/16 финала',
-  roundOf16: '1/8 финала',
-  quarterFinals: '1/4 финала',
-  semiFinals: 'Полуфинал',
+  roundOf32: '1/16 финал',
+  roundOf16: '1/8 финал',
+  quarterFinals: '1/4 финал',
+  semiFinals: 'Жарым финал',
   final12: 'Финал',
 };
 
@@ -139,6 +146,16 @@ const normalizeStoredPlayers = (players, savedBook = {}) => {
   });
 };
 
+const normalizePlayerDirectory = (players) =>
+  sortPlayersByEntryNumber(
+    (players || []).map((player, index) => ({
+      ...player,
+      phone: player.phone ?? '',
+      gender: player.gender ?? '',
+      entryNumber: player.entryNumber ?? index + 1,
+    })),
+  );
+
 const isEmptyBracket = (bracket) =>
   !bracket.final12 &&
   !bracket.final34 &&
@@ -161,9 +178,28 @@ const parseStoredState = (raw) => {
     ...DEFAULT_STATE,
     ...parsed,
     players: normalizedPlayers,
+    playerDirectory: normalizePlayerDirectory(parsed.playerDirectory || parsed.players || []),
     playerNumberBook,
     bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : EMPTY_BRACKET,
+    scoreSubmission: {
+      ...DEFAULT_SCORE_SUBMISSION,
+      ...(parsed.scoreSubmission || {}),
+      entries: Array.isArray(parsed.scoreSubmission?.entries) ? parsed.scoreSubmission.entries : [],
+    },
   };
+};
+
+const formatSubmissionTimestamp = (value) => {
+  if (!value) {
+    return 'Убакыты белгисиз';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Убакыты белгисиз';
+  }
+
+  return date.toLocaleString('ru-RU');
 };
 
 const loadInitialState = () => {
@@ -445,8 +481,10 @@ const App = () => {
   const [headReferee, setHeadReferee] = useState(initialState.headReferee);
   const [headSecretary, setHeadSecretary] = useState(initialState.headSecretary);
   const [players, setPlayers] = useState(initialState.players);
+  const [playerDirectory, setPlayerDirectory] = useState(initialState.playerDirectory || []);
   const [playerNumberBook, setPlayerNumberBook] = useState(initialState.playerNumberBook);
   const [scores, setScores] = useState(initialState.scores);
+  const [scoreSubmission, setScoreSubmission] = useState(initialState.scoreSubmission || DEFAULT_SCORE_SUBMISSION);
   const [activeTab, setActiveTab] = useState('players');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
@@ -458,6 +496,7 @@ const App = () => {
   const [playoffStage, setPlayoffStage] = useState(initialState.playoffStage);
   const [bracket, setBracket] = useState(initialState.bracket);
   const [printTarget, setPrintTarget] = useState(null);
+  const [isResetConfirmVisible, setIsResetConfirmVisible] = useState(false);
   const isRemoteHydratedRef = useRef(false);
   const skipNextRemoteSaveRef = useRef(false);
   const reportDate = new Date().toLocaleDateString('ru-RU');
@@ -469,8 +508,10 @@ const App = () => {
     setHeadReferee(nextState.headReferee);
     setHeadSecretary(nextState.headSecretary);
     setPlayers(nextState.players);
+    setPlayerDirectory(nextState.playerDirectory || []);
     setPlayerNumberBook(nextState.playerNumberBook);
     setScores(nextState.scores || {});
+    setScoreSubmission(nextState.scoreSubmission || DEFAULT_SCORE_SUBMISSION);
     setBracket(nextState.bracket);
     setPlayoffStage(nextState.playoffStage);
     setPlayoffMode(nextState.playoffMode);
@@ -484,8 +525,10 @@ const App = () => {
       headReferee,
       headSecretary,
       players,
+      playerDirectory,
       playerNumberBook,
       scores,
+      scoreSubmission,
       rounds: ROUNDS,
       bracket,
       playoffStage,
@@ -499,8 +542,11 @@ const App = () => {
       headReferee === DEFAULT_STATE.headReferee &&
       headSecretary === DEFAULT_STATE.headSecretary &&
       players.length === 0 &&
+      playerDirectory.length === 0 &&
       Object.keys(playerNumberBook).length === 0 &&
       Object.keys(scores).length === 0 &&
+      scoreSubmission.activeRound === DEFAULT_SCORE_SUBMISSION.activeRound &&
+      scoreSubmission.entries.length === 0 &&
       playoffStage === DEFAULT_STATE.playoffStage &&
       playoffMode === DEFAULT_STATE.playoffMode &&
       isEmptyBracket(bracket);
@@ -526,7 +572,7 @@ const App = () => {
     }
 
     saveTournamentState(nextState).catch(() => {});
-  }, [tournamentName, location, category, headReferee, headSecretary, players, playerNumberBook, scores, bracket, playoffStage, playoffMode]);
+  }, [tournamentName, location, category, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, bracket, playoffStage, playoffMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -577,6 +623,23 @@ const App = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (players.length === 0) {
+      return;
+    }
+
+    setPlayerDirectory((prev) => {
+      const knownIds = new Set(prev.map((player) => player.id));
+      const missingPlayers = players.filter((player) => !knownIds.has(player.id));
+
+      if (missingPlayers.length === 0) {
+        return prev;
+      }
+
+      return normalizePlayerDirectory([...prev, ...missingPlayers]);
+    });
+  }, [players]);
+
   const calculateTotal = (playerId) => {
     const playerScores = scores[playerId] || {};
     return Object.values(playerScores).reduce((sum, value) => sum + Number(value || 0), 0);
@@ -586,13 +649,14 @@ const App = () => {
   const rankedPlayers = [...players].sort((a, b) => calculateTotal(b.id) - calculateTotal(a.id));
   const journalSheetLayout = getJournalSheetLayout(players.length);
   const bracketStagesForSheet = getBracketStagesForSheet(bracket, playoffMode);
+  const scoreSubmissionEntries = scoreSubmission.entries || [];
   const visibleStageKeys = getVisibleStageKeys(playoffMode);
   const playersPreviewCount = 3;
   const visiblePlayers = isPlayersListExpanded ? orderedPlayers : orderedPlayers.slice(0, playersPreviewCount);
   const hiddenPlayersCount = Math.max(orderedPlayers.length - playersPreviewCount, 0);
   const playerPositionMap = Object.fromEntries(orderedPlayers.map((player, index) => [player.id, index + 1]));
   const normalizedPlayerSearchQuery = playerSearchQuery.trim().toLocaleLowerCase();
-  const filteredPlayerData = orderedPlayers.filter((player) => {
+  const filteredPlayerData = playerDirectory.filter((player) => {
     if (!normalizedPlayerSearchQuery) {
       return true;
     }
@@ -642,13 +706,28 @@ const App = () => {
       setNewPlayerGender('male');
     } catch (error) {
       // Показываем ошибку пользователю
-      alert(`Ошибка при добавлении игрока: ${error.message || 'Неизвестная ошибка'}`);
+      alert(`Оюнчу кошууда ката кетти: ${error.message || 'Белгисиз ката'}`);
       console.error('Failed to add player:', error);
     }
   };
 
   const removePlayer = (playerId) => {
+    const removedPlayer = players.find((player) => player.id === playerId);
+
     setPlayers((prev) => prev.filter((player) => player.id !== playerId));
+    if (removedPlayer) {
+      const normalizedName = normalizePlayerName(removedPlayer.name || '');
+      setPlayerNumberBook((prev) => {
+        if (!normalizedName || !(normalizedName in prev)) {
+          return prev;
+        }
+
+        const next = { ...prev };
+        delete next[normalizedName];
+        return next;
+      });
+    }
+
     setScores((prev) => {
       const next = { ...prev };
       delete next[playerId];
@@ -664,6 +743,18 @@ const App = () => {
         ...(prev[playerId] || {}),
         [roundId]: Number.isNaN(score) ? 0 : score,
       },
+    }));
+  };
+
+  const clearPlayerDirectory = () => {
+    setPlayerDirectory([]);
+    setPlayerSearchQuery('');
+  };
+
+  const openScoreRound = (round) => {
+    setScoreSubmission((prev) => ({
+      ...prev,
+      activeRound: round,
     }));
   };
 
@@ -816,16 +907,17 @@ const App = () => {
   };
 
   const resetTournament = () => {
-    if (!window.confirm('Бардык маалыматты толугу менен тазалап, сайтты баштапкы абалга кайтаралыбы?')) return;
-
+    const preservedPlayerDirectory = [...playerDirectory];
     setTournamentName(DEFAULT_STATE.tournamentName);
     setLocation(DEFAULT_STATE.location);
     setCategory(DEFAULT_STATE.category);
     setHeadReferee(DEFAULT_STATE.headReferee);
     setHeadSecretary(DEFAULT_STATE.headSecretary);
     setPlayers([]);
+    setPlayerDirectory(preservedPlayerDirectory);
     setPlayerNumberBook({});
     setScores({});
+    setScoreSubmission(DEFAULT_SCORE_SUBMISSION);
     setBracket(createEmptyBracket());
     setPlayoffStage(DEFAULT_STATE.playoffStage);
     setPlayoffMode(DEFAULT_STATE.playoffMode);
@@ -833,10 +925,11 @@ const App = () => {
     setNewPlayerName('');
     setNewPlayerPhone('');
     setNewPlayerGender('male');
+    setPlayerSearchQuery('');
     setIsMenuOpen(false);
     setIsPlayersListExpanded(false);
     setPrintTarget(null);
-    window.localStorage.removeItem(STORAGE_KEY);
+    setIsResetConfirmVisible(false);
   };
 
   const handlePrintSheet = (target) => {
@@ -856,7 +949,7 @@ const App = () => {
             <TargetIcon size={20} />
           </div>
           <div>
-            <p className="eyebrow">Tournament Manager</p>
+            <p className="eyebrow">Турнир башкаруу</p>
             <h1 className="brand-title">Жаа атуу платформасы</h1>
           </div>
         </div>
@@ -889,6 +982,26 @@ const App = () => {
       </header>
 
       <main className="page">
+        {isResetConfirmVisible && (
+          <section className="confirm-banner">
+            <div>
+              <p className="eyebrow">Ырастоо</p>
+              <h3 className="confirm-banner__title">Баарын тазалоону чын эле каалайсызбы?</h3>
+              <p className="confirm-banner__text">
+                Катышуучулар, журнал, рейтинг, плей-офф жана колдонуучунун панели тазаланат. `Оюнчу тизмеси` гана сакталат.
+              </p>
+            </div>
+            <div className="confirm-banner__actions">
+              <button type="button" className="ghost-button" onClick={() => setIsResetConfirmVisible(false)}>
+                Жок, артка кайтуу
+              </button>
+              <button type="button" className="primary-button" onClick={resetTournament}>
+                Ооба, баарын тазалоо
+              </button>
+            </div>
+          </section>
+        )}
+
         <section className="hero-card">
           <div>
             <p className="eyebrow">Мобилдик версияга ылайыкталган</p>
@@ -922,7 +1035,7 @@ const App = () => {
                   <p className="eyebrow">Турнир маалыматы</p>
                   <h3 className="panel__title">Негизги жөндөөлөр</h3>
                 </div>
-                <button type="button" onClick={resetTournament} className="ghost-button">
+                <button type="button" onClick={() => setIsResetConfirmVisible(true)} className="ghost-button">
                   <RefreshIcon size={16} /> Баарын тазалоо
                 </button>
               </div>
@@ -1064,10 +1177,32 @@ const App = () => {
         {activeTab === 'journal' && (
           <section className="report-page">
             <div className="panel">
-              <div className="panel__header">
+              <div className="panel__header panel__header--stack">
                 <div>
                   <p className="eyebrow">Квалификация</p>
                   <h3 className="panel__title">Упай журналы</h3>
+                </div>
+
+                <div className="score-round-manager">
+                  <div className="score-round-manager__summary">
+                    <span className="pill">Ачык раунд: {scoreSubmission.activeRound}</span>
+                    <p className="score-round-manager__hint">
+                      Оюнчулар азыр ушул раундга гана упай жаза алышат. 2-раунд админ ачмайынча колдонуучулар киргизе албайт.
+                    </p>
+                  </div>
+
+                  <div className="mode-switch">
+                    {ROUNDS.map((round) => (
+                      <button
+                        key={round}
+                        type="button"
+                        className={`mode-switch__button ${scoreSubmission.activeRound === round ? 'mode-switch__button--active' : ''}`}
+                        onClick={() => openScoreRound(round)}
+                      >
+                        Раунд {round}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1113,7 +1248,7 @@ const App = () => {
             >
               <div className="report-sheet__topline">
                 <span>Расмий журнал</span>
-                <span>Дата: {reportDate}</span>
+                <span>Күнү: {reportDate}</span>
               </div>
 
               <div className="report-sheet__header report-sheet__header--compact">
@@ -1198,9 +1333,14 @@ const App = () => {
                 <p className="eyebrow">Маалыматтар</p>
                 <h3 className="panel__title">Оюнчулардын толук тизмеси</h3>
               </div>
-              <div className="pill">
-                <UsersIcon size={16} />
-                {orderedPlayers.length}
+              <div className="panel__header-actions">
+                <button type="button" className="secondary-button" onClick={clearPlayerDirectory}>
+                  Тизмени тазалоо
+                </button>
+                <div className="pill">
+                  <UsersIcon size={16} />
+                  {playerDirectory.length}
+                </div>
               </div>
             </div>
 
@@ -1261,7 +1401,7 @@ const App = () => {
             <div className="panel__header panel__header--stack">
               <div>
                 <p className="eyebrow">Тандоо</p>
-                <h3 className="panel__title">Рейтинг жана тандоо</h3>
+                <h3 className="panel__title">Жыйынтык жана тандоо</h3>
               </div>
 
               <div className="mode-switch">
@@ -1305,7 +1445,7 @@ const App = () => {
           <section className="panel">
             <div className="panel__header">
               <div>
-                <p className="eyebrow">Плей-офф</p>
+                <p className="eyebrow">Финалдык тор</p>
                 <h3 className="panel__title">Беттеш тору</h3>
               </div>
             </div>
@@ -1373,7 +1513,7 @@ const App = () => {
             >
               <div className="report-sheet__topline">
                 <span>Расмий отчет</span>
-                <span>Дата: {reportDate}</span>
+                <span>Күнү: {reportDate}</span>
               </div>
 
               <div className="report-sheet__header report-sheet__header--compact">
@@ -1399,7 +1539,7 @@ const App = () => {
                         />
                       ))
                     ) : (
-                      <div className="report-empty-state">Плей-офф маалыматтары азырынча түзүлгөн жок.</div>
+                      <div className="report-empty-state">Финалдык тордун маалыматы азырынча түзүлгөн жок.</div>
                     )}
 
                     <div className="report-bracket-layout__finals">
@@ -1445,7 +1585,7 @@ const App = () => {
             </div>
 
             <button type="button" onClick={() => handlePrintSheet('report')} className="primary-button">
-              <PrinterIcon size={18} /> Отчетту PDF кылып чыгаруу
+              <PrinterIcon size={18} /> Баяндаманы PDF кылып чыгаруу
             </button>
           </section>
         )}

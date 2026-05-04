@@ -1,7 +1,7 @@
 import './app.css'
 
 import { useEffect, useMemo, useState } from 'react'
-import { fetchTournamentState, registerTournamentPlayer } from '../shared/tournamentApi.js'
+import { fetchTournamentState, registerTournamentPlayer, submitPlayerScore } from '../shared/tournamentApi.js'
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -15,6 +15,11 @@ const EMPTY_BRACKET = {
 
 const FINAL_PRIMARY_ROUNDS = 6
 const FINAL_ROUNDS_COUNT = 12
+const PLAYER_IDENTITY_KEY = 'archery_user_registered_player_v1'
+const DEFAULT_SCORE_SUBMISSION = {
+  activeRound: 1,
+  entries: [],
+}
 
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
@@ -26,13 +31,16 @@ const DEFAULT_STATE = {
   playoffMode: 16,
   playoffStage: 'none',
   playerNumberBook: {},
+  scoreSubmission: DEFAULT_SCORE_SUBMISSION,
 }
 
 const sections = [
   { id: 'register', label: 'Катталуу' },
-  { id: 'rating', label: 'Рейтинг' },
-  { id: 'playoff', label: 'Плей-офф' },
+  { id: 'rating', label: 'Даража' },
+  { id: 'playoff', label: 'Жеке элек' },
 ]
+
+sections.push({ id: 'scoreEntry', label: 'Очко жазуу' })
 
 const seedOrders = {
   32: [0, 31, 15, 16, 7, 24, 8, 23, 4, 27, 11, 20, 3, 28, 12, 19, 1, 30, 14, 17, 6, 25, 9, 22, 5, 26, 10, 21, 2, 29, 13, 18],
@@ -45,6 +53,12 @@ const initialRegistrationForm = {
   fullName: '',
   phone: '',
   gender: 'male',
+}
+
+const initialScoreForm = {
+  playerId: '',
+  phone: '',
+  score: '',
 }
 
 const stageTitles = {
@@ -73,6 +87,40 @@ const createEmptyState = () => ({
   ...DEFAULT_STATE,
   bracket: { ...EMPTY_BRACKET },
 })
+
+const loadRegisteredPlayer = () => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(PLAYER_IDENTITY_KEY)
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw)
+    return parsed?.playerId && parsed?.name ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const saveRegisteredPlayer = (player) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(PLAYER_IDENTITY_KEY, JSON.stringify(player))
+}
+
+const clearRegisteredPlayer = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.removeItem(PLAYER_IDENTITY_KEY)
+}
 
 const buildPlayerNumberBook = (players, savedBook = {}) => {
   const nextBook = { ...savedBook }
@@ -120,6 +168,11 @@ const parseTournamentState = (payload) => {
     players: sortPlayersByEntryNumber(normalizedPlayers),
     playerNumberBook,
     bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : { ...EMPTY_BRACKET },
+    scoreSubmission: {
+      ...DEFAULT_SCORE_SUBMISSION,
+      ...(parsed.scoreSubmission || {}),
+      entries: Array.isArray(parsed.scoreSubmission?.entries) ? parsed.scoreSubmission.entries : [],
+    },
   }
 }
 
@@ -165,8 +218,11 @@ const TargetIcon = ({ size = 20 }) => (
 function App() {
   const [activeSection, setActiveSection] = useState('register')
   const [registrationMessage, setRegistrationMessage] = useState('')
+  const [scoreMessage, setScoreMessage] = useState('')
   const [tournamentState, setTournamentState] = useState(createEmptyState)
+  const [registeredPlayer, setRegisteredPlayer] = useState(loadRegisteredPlayer)
   const [registrationForm, setRegistrationForm] = useState(initialRegistrationForm)
+  const [scoreForm, setScoreForm] = useState(initialScoreForm)
 
   useEffect(() => {
     let isMounted = true
@@ -204,6 +260,7 @@ function App() {
   }, [tournamentState.players, tournamentState.scores])
 
   const playoffMatches = useMemo(() => getAllMatches(tournamentState.bracket), [tournamentState.bracket])
+  const activeScoreRound = tournamentState.scoreSubmission?.activeRound || 1
   const playoffStages = useMemo(() => {
     const stageKeys = playoffStageKeysByMode[tournamentState.playoffMode] || playoffStageKeysByMode[8]
     return stageKeys.map((stageKey) => ({
@@ -213,6 +270,52 @@ function App() {
     }))
   }, [tournamentState.bracket, tournamentState.playoffMode])
   const hasFinalMatches = Boolean(tournamentState.bracket.final12 || tournamentState.bracket.final34)
+  const selectedPlayer = useMemo(
+    () => tournamentState.players.find((player) => player.id === registeredPlayer?.playerId) || null,
+    [registeredPlayer, tournamentState.players],
+  )
+  const currentRoundScore = selectedPlayer ? tournamentState.scores[selectedPlayer.id]?.[activeScoreRound] ?? '' : ''
+  const isRegistered = Boolean(selectedPlayer)
+  const visibleSections = isRegistered
+    ? sections.filter((section) => section.id !== 'register')
+    : sections.filter((section) => section.id === 'register')
+
+  useEffect(() => {
+    if (!selectedPlayer) {
+      return
+    }
+
+    setScoreForm((current) => ({
+      ...current,
+      playerId: selectedPlayer.id,
+      phone: selectedPlayer.phone || '',
+    }))
+  }, [selectedPlayer])
+
+  useEffect(() => {
+    if (!registeredPlayer) {
+      return
+    }
+
+    if (!selectedPlayer && tournamentState.players.length > 0) {
+      setRegisteredPlayer(null)
+      clearRegisteredPlayer()
+      setScoreForm(initialScoreForm)
+    }
+  }, [registeredPlayer, selectedPlayer, tournamentState.players.length])
+
+  useEffect(() => {
+    if (isRegistered) {
+      if (activeSection === 'register') {
+        setActiveSection('rating')
+      }
+      return
+    }
+
+    if (activeSection !== 'register') {
+      setActiveSection('register')
+    }
+  }, [activeSection, isRegistered])
 
   const handleRegistrationChange = ({ target }) => {
     const { name, value } = target
@@ -232,6 +335,11 @@ function App() {
 
   const handleRegistrationSubmit = async (event) => {
     event.preventDefault()
+
+    if (registeredPlayer?.playerId) {
+      setRegistrationMessage(`Бул түзмөктөн биринчи сакталган оюнчу: ${registeredPlayer.name}. Кайра катталууга болбойт.`)
+      return
+    }
 
     const fullName = registrationForm.fullName.trim()
     const phone = registrationForm.phone.trim()
@@ -261,11 +369,74 @@ function App() {
       )
 
       setTournamentState(nextState)
+      const savedPlayer = nextState.players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(fullName))
+      if (savedPlayer) {
+        const identity = { playerId: savedPlayer.id, name: savedPlayer.name }
+        setRegisteredPlayer(identity)
+        saveRegisteredPlayer(identity)
+        setActiveSection('rating')
+      }
       setRegistrationForm(initialRegistrationForm)
       setRegistrationMessage('Катталуу ийгиликтүү аяктады.')
     } catch (error) {
       setRegistrationMessage(error.message || 'Катталууну сактоо мүмкүн болгон жок.')
     }
+  }
+
+  const handleScoreChange = ({ target }) => {
+    const { name, value } = target
+
+    if (name === 'score') {
+      setScoreForm((current) => ({ ...current, score: value.replace(/\D/g, '').slice(0, 3) }))
+      return
+    }
+
+    setScoreForm((current) => ({ ...current, [name]: value }))
+  }
+
+  const handleScoreSubmit = async (event) => {
+    event.preventDefault()
+
+    if (!scoreForm.playerId) {
+      setScoreMessage('Оюнчуну тандаңыз.')
+      return
+    }
+
+    if (!scoreForm.phone.trim()) {
+      setScoreMessage('Телефон номериңизди жазыңыз.')
+      return
+    }
+
+    if (scoreForm.score === '') {
+      setScoreMessage('Упайды жазыңыз.')
+      return
+    }
+
+    try {
+      const nextState = parseTournamentState(
+        await submitPlayerScore({
+          playerId: scoreForm.playerId,
+          phone: scoreForm.phone.trim(),
+          score: scoreForm.score,
+        }),
+      )
+
+      setTournamentState(nextState)
+      setScoreForm((current) => ({ ...initialScoreForm, playerId: current.playerId, phone: current.phone }))
+      setScoreMessage(`Упай журналга жазылды. Азыр ачык раунд: ${nextState.scoreSubmission.activeRound}.`)
+    } catch (error) {
+      setScoreMessage(error.message || 'Упайды жөнөтүү мүмкүн болгон жок.')
+    }
+  }
+
+  const handleResetRegistration = () => {
+    setRegisteredPlayer(null)
+    clearRegisteredPlayer()
+    setRegistrationForm(initialRegistrationForm)
+    setScoreForm(initialScoreForm)
+    setRegistrationMessage('Эски катталуу бул түзмөктөн өчүрүлдү. Эми кайра жаңыдан катталсаңыз болот.')
+    setScoreMessage('')
+    setActiveSection('register')
   }
 
   return (
@@ -284,7 +455,7 @@ function App() {
         </div>
 
         <div className="topbar__actions">
-          {sections.map((section) => (
+          {visibleSections.map((section) => (
             <button
               key={section.id}
               type="button"
@@ -347,6 +518,7 @@ function App() {
                   value={registrationForm.fullName}
                   onChange={handleRegistrationChange}
                   autoComplete="name"
+                  disabled={Boolean(registeredPlayer)}
                   required
                 />
               </label>
@@ -362,6 +534,7 @@ function App() {
                   maxLength={10}
                   autoComplete="tel"
                   placeholder="996"
+                  disabled={Boolean(registeredPlayer)}
                   required
                 />
               </label>
@@ -376,6 +549,7 @@ function App() {
                       value="male"
                       checked={registrationForm.gender === 'male'}
                       onChange={handleRegistrationChange}
+                      disabled={Boolean(registeredPlayer)}
                     />
                     <span>Эркек</span>
                   </label>
@@ -387,6 +561,7 @@ function App() {
                       value="female"
                       checked={registrationForm.gender === 'female'}
                       onChange={handleRegistrationChange}
+                      disabled={Boolean(registeredPlayer)}
                     />
                     <span>Аял</span>
                   </label>
@@ -402,6 +577,12 @@ function App() {
               </button>
             </form>
 
+            <div className="action-row">
+              <button type="button" className="secondary-button" onClick={handleResetRegistration}>
+                Каттоону өчүрүп, кайра катталуу
+              </button>
+            </div>
+
             {registrationMessage && <p className="message-line">{registrationMessage}</p>}
           </section>
         )}
@@ -410,7 +591,7 @@ function App() {
           <section className="panel">
             <div className="panel__header">
               <div>
-                <p className="eyebrow">Рейтинг</p>
+                <p className="eyebrow">Жыйынтык</p>
                 <h3 className="panel__title">Катышуучулардын жыйынтыгы</h3>
               </div>
               <div className="pill">Авто жаңыланат</div>
@@ -444,7 +625,7 @@ function App() {
           <section className="panel">
             <div className="panel__header">
               <div>
-                <p className="eyebrow">Плей-офф</p>
+                <p className="eyebrow">Финалдык тор</p>
                 <h3 className="panel__title">Беттештердин жыйынтыгы</h3>
               </div>
               <div className="pill">Авто жаңыланат</div>
@@ -484,6 +665,58 @@ function App() {
             ) : (
               <div className="empty-state">Админ-панелде плей-офф азырынча түзүлгөн жок.</div>
             )}
+          </section>
+        )}
+
+        {activeSection === 'scoreEntry' && (
+          <section className="panel panel--narrow">
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">Очко жазуу</p>
+                <h3 className="panel__title">Оюнчу упайын жөнөтүү</h3>
+              </div>
+              <div className="pill">Ачык раунд: {activeScoreRound}</div>
+            </div>
+
+            <div className="info-strip">
+              <span>Упай дароо админ журналында көрүнөт.</span>
+              <span>Кийинки раунд админ ачмайынча бул жерден башка раундга өтүү мүмкүн эмес.</span>
+            </div>
+
+            <form className="form-grid" onSubmit={handleScoreSubmit}>
+              <label className="field field--full">
+                <span className="field__label">Аты</span>
+                <input className="field__control" value={registeredPlayer?.name || ''} readOnly placeholder="Адегенде катталуу керек" />
+              </label>
+
+              <input type="hidden" name="playerId" value={scoreForm.playerId} readOnly />
+              <input type="hidden" name="phone" value={scoreForm.phone} readOnly />
+
+              <label className="field">
+                <span className="field__label">Упай</span>
+                <input
+                  name="score"
+                  className="field__control"
+                  value={scoreForm.score}
+                  onChange={handleScoreChange}
+                  inputMode="numeric"
+                  maxLength={3}
+                  required
+                />
+              </label>
+
+              <div className="note-card field--full">
+                {selectedPlayer
+                  ? `Азыр ачык раунд: ${activeScoreRound}. Бул ат үчүн ушул раунддагы журналдагы маани: ${currentRoundScore === '' ? 'жок' : currentRoundScore}.`
+                  : 'Адегенде Катталуу бөлүмүндө атыңызды сактаңыз. Ошондон кийин бул жерде ат автоматтык чыгат.'}
+              </div>
+
+              <button type="submit" className="primary-button field--full">
+                Упайды жөнөтүү
+              </button>
+            </form>
+
+            {scoreMessage && <p className="message-line">{scoreMessage}</p>}
           </section>
         )}
       </main>
