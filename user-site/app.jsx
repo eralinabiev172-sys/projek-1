@@ -85,6 +85,7 @@ const playoffStageKeysByMode = {
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
 const sanitizePlayerName = (value) => value.replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ')
 const sanitizePhone = (value) => value.replace(/\D/g, '').slice(0, 10)
+const sanitizeNonNegativeNumber = (value) => value.replace(/[^\d]/g, '').slice(0, 3)
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value.trim())
 const isValidPhone = (value) => /^\d+$/.test(value.trim())
 const findPlayerByName = (players, name) =>
@@ -445,7 +446,7 @@ function App() {
     const { name, value } = target
 
     if (name === 'score') {
-      setScoreForm((current) => ({ ...current, score: value.replace(/\D/g, '').slice(0, 3) }))
+      setScoreForm((current) => ({ ...current, score: sanitizeNonNegativeNumber(value) }))
       return
     }
 
@@ -467,6 +468,11 @@ function App() {
 
     if (scoreForm.score === '') {
       setScoreMessage('Упайды жазыңыз.')
+      return
+    }
+
+    if (!/^\d+$/.test(scoreForm.score)) {
+      setScoreMessage('Only 0 and positive digits are allowed.')
       return
     }
 
@@ -801,11 +807,13 @@ function App() {
               <label className="field">
                 <span className="field__label">Упай</span>
                 <input
+                  type="text"
                   name="score"
                   className="field__control"
                   value={hasSubmittedCurrentRound ? String(currentRoundScore) : scoreForm.score}
                   onChange={handleScoreChange}
                   inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={3}
                   disabled={hasSubmittedCurrentRound}
                   required
