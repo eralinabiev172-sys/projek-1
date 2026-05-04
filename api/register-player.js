@@ -8,9 +8,25 @@ const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0,
 const sanitizePlayerName = (value) => String(value || '').replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ').trim()
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
+const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
 const normalizeScoreSubmission = (value) => ({
   activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
   entries: Array.isArray(value?.entries) ? value.entries : [],
+})
+const extractPlayerNumberBook = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  const nextBook = { ...value }
+  delete nextBook[SCORE_SUBMISSION_META_KEY]
+  return nextBook
+}
+const readStoredScoreSubmission = (dbRow) =>
+  normalizeScoreSubmission(dbRow.score_submission || dbRow.player_number_book?.[SCORE_SUBMISSION_META_KEY])
+const writeStoredPlayerNumberBook = (playerNumberBook, scoreSubmission) => ({
+  ...(playerNumberBook || {}),
+  [SCORE_SUBMISSION_META_KEY]: normalizeScoreSubmission(scoreSubmission),
 })
 
 // Преобразование из snake_case (БД) в camelCase (JS)
@@ -33,8 +49,8 @@ const dbToJs = (dbRow) => ({
   },
   playoffStage: dbRow.playoff_stage,
   playoffMode: dbRow.playoff_mode,
-  playerNumberBook: dbRow.player_number_book || {},
-  scoreSubmission: normalizeScoreSubmission(dbRow.score_submission),
+  playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
+  scoreSubmission: readStoredScoreSubmission(dbRow),
 })
 
 export default async function handler(req, res) {
@@ -130,7 +146,7 @@ export default async function handler(req, res) {
       .from('tournament_state')
       .update({
         players: updatedPlayers,
-        player_number_book: updatedPlayerNumberBook,
+        player_number_book: writeStoredPlayerNumberBook(updatedPlayerNumberBook, currentState.scoreSubmission),
       })
       .eq('id', 'main')
       .select()

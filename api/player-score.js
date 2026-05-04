@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY
+const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -12,6 +13,29 @@ const EMPTY_BRACKET = {
   final34: null,
   winners: [],
 }
+
+const normalizeScoreSubmission = (value) => ({
+  activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
+  entries: Array.isArray(value?.entries) ? value.entries : [],
+})
+
+const extractPlayerNumberBook = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  const nextBook = { ...value }
+  delete nextBook[SCORE_SUBMISSION_META_KEY]
+  return nextBook
+}
+
+const readStoredScoreSubmission = (dbRow) =>
+  normalizeScoreSubmission(dbRow.score_submission || dbRow.player_number_book?.[SCORE_SUBMISSION_META_KEY])
+
+const writeStoredPlayerNumberBook = (playerNumberBook, scoreSubmission) => ({
+  ...(playerNumberBook || {}),
+  [SCORE_SUBMISSION_META_KEY]: normalizeScoreSubmission(scoreSubmission),
+})
 
 const dbToJs = (dbRow) => ({
   tournamentName: dbRow.tournament_name,
@@ -24,17 +48,13 @@ const dbToJs = (dbRow) => ({
   bracket: dbRow.bracket || EMPTY_BRACKET,
   playoffStage: dbRow.playoff_stage,
   playoffMode: dbRow.playoff_mode,
-  playerNumberBook: dbRow.player_number_book || {},
-  scoreSubmission: normalizeScoreSubmission(dbRow.score_submission),
+  playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
+  scoreSubmission: readStoredScoreSubmission(dbRow),
 })
 
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
 const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= 999
-const normalizeScoreSubmission = (value) => ({
-  activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
-  entries: Array.isArray(value?.entries) ? value.entries : [],
-})
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -82,7 +102,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: fetchError.message })
     }
 
-    const scoreSubmission = normalizeScoreSubmission(currentData?.score_submission)
+    const scoreSubmission = readStoredScoreSubmission(currentData)
     const activeRound = scoreSubmission.activeRound
     const currentState = dbToJs(currentData)
     const player = currentState.players.find((item) => item.id === playerId)
@@ -121,7 +141,7 @@ export default async function handler(req, res) {
       .from('tournament_state')
       .update({
         scores: updatedScores,
-        score_submission: updatedScoreSubmission,
+        player_number_book: writeStoredPlayerNumberBook(currentState.playerNumberBook, updatedScoreSubmission),
       })
       .eq('id', 'main')
       .select('*')
