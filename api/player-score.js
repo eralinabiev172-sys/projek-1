@@ -59,8 +59,6 @@ export default async function handler(req, res) {
     const playerId = String(req.body?.playerId || '').trim()
     const phone = sanitizePhone(req.body?.phone)
     const score = Number.parseInt(req.body?.score, 10)
-    const scoreSubmission = normalizeScoreSubmission(currentData?.score_submission)
-    const activeRound = scoreSubmission.activeRound
 
     if (!playerId) {
       return res.status(400).json({ error: 'Оюнчу тандалган жок.' })
@@ -84,6 +82,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: fetchError.message })
     }
 
+    const scoreSubmission = normalizeScoreSubmission(currentData?.score_submission)
+    const activeRound = scoreSubmission.activeRound
     const currentState = dbToJs(currentData)
     const player = currentState.players.find((item) => item.id === playerId)
 
