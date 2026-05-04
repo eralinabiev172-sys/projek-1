@@ -1185,9 +1185,9 @@ const App = () => {
 
                 <div className="score-round-manager">
                   <div className="score-round-manager__summary">
-                    <span className="pill">Ачык раунд: {scoreSubmission.activeRound}</span>
+                    <span className="pill">Ачык айлампа: {scoreSubmission.activeRound}</span>
                     <p className="score-round-manager__hint">
-                      Оюнчулар азыр ушул раундга гана упай жаза алышат. 2-раунд админ ачмайынча колдонуучулар киргизе албайт.
+                      Оюнчулар азыр ушул айлампага гана упай жаза алышат. 2-айлампаны админ ачмайынча колдонуучулар киргизе албайт.
                     </p>
                   </div>
 
@@ -1199,7 +1199,7 @@ const App = () => {
                         className={`mode-switch__button ${scoreSubmission.activeRound === round ? 'mode-switch__button--active' : ''}`}
                         onClick={() => openScoreRound(round)}
                       >
-                        Раунд {round}
+                        Айлампа {round}
                       </button>
                     ))}
                   </div>
@@ -1212,7 +1212,7 @@ const App = () => {
                     <tr>
                       <th>Катышуучу</th>
                       {ROUNDS.map((round) => (
-                        <th key={round}>Раунд {round}</th>
+                        <th key={round}>Айлампа {round}</th>
                       ))}
                       <th>Жалпы</th>
                     </tr>
