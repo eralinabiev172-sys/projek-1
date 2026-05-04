@@ -92,6 +92,7 @@ const createMatch = (id, p1, p2, isFinal = false) => ({
 });
 
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase();
+const sanitizeNonNegativeNumber = (value, maxLength = 3) => String(value ?? '').replace(/[^\d]/g, '').slice(0, maxLength);
 
 const createEmptyBracket = () => ({
   roundOf32: [],
@@ -736,7 +737,8 @@ const App = () => {
   };
 
   const updateScore = (playerId, roundId, value) => {
-    const score = Number.parseInt(value, 10);
+    const sanitizedValue = sanitizeNonNegativeNumber(value);
+    const score = Number.parseInt(sanitizedValue, 10);
     setScores((prev) => ({
       ...prev,
       [playerId]: {
@@ -1224,10 +1226,13 @@ const App = () => {
                         {ROUNDS.map((round) => (
                           <td key={round}>
                             <input
-                              type="number"
+                              type="text"
                               className="table-input"
                               value={scores[player.id]?.[round] ?? ''}
                               onChange={(event) => updateScore(player.id, round, event.target.value)}
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={3}
                             />
                           </td>
                         ))}
