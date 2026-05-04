@@ -23,7 +23,16 @@ const DEFAULT_STATE = {
   playoffStage: 'none',
   playoffMode: 16,
   playerNumberBook: {},
+  scoreSubmission: {
+    activeRound: 1,
+    entries: [],
+  },
 }
+
+const normalizeScoreSubmission = (value) => ({
+  activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
+  entries: Array.isArray(value?.entries) ? value.entries : [],
+})
 
 // Преобразование из snake_case (БД) в camelCase (JS)
 const dbToJs = (dbRow) => ({
@@ -38,6 +47,7 @@ const dbToJs = (dbRow) => ({
   playoffStage: dbRow.playoff_stage,
   playoffMode: dbRow.playoff_mode,
   playerNumberBook: dbRow.player_number_book || {},
+  scoreSubmission: normalizeScoreSubmission(dbRow.score_submission),
 })
 
 // Преобразование из camelCase (JS) в snake_case (БД)
@@ -53,6 +63,7 @@ const jsToDb = (jsState) => ({
   playoff_stage: jsState.playoffStage,
   playoff_mode: jsState.playoffMode,
   player_number_book: jsState.playerNumberBook,
+  score_submission: normalizeScoreSubmission(jsState.scoreSubmission),
 })
 
 export default async function handler(req, res) {
@@ -109,6 +120,7 @@ export default async function handler(req, res) {
       const nextState = {
         ...DEFAULT_STATE,
         ...req.body,
+        scoreSubmission: normalizeScoreSubmission(req.body?.scoreSubmission),
       }
 
       const { data, error } = await supabase

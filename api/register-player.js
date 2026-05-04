@@ -8,6 +8,10 @@ const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0,
 const sanitizePlayerName = (value) => String(value || '').replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ').trim()
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
+const normalizeScoreSubmission = (value) => ({
+  activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
+  entries: Array.isArray(value?.entries) ? value.entries : [],
+})
 
 // Преобразование из snake_case (БД) в camelCase (JS)
 const dbToJs = (dbRow) => ({
@@ -30,6 +34,7 @@ const dbToJs = (dbRow) => ({
   playoffStage: dbRow.playoff_stage,
   playoffMode: dbRow.playoff_mode,
   playerNumberBook: dbRow.player_number_book || {},
+  scoreSubmission: normalizeScoreSubmission(dbRow.score_submission),
 })
 
 export default async function handler(req, res) {
