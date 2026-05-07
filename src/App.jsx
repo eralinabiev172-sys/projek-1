@@ -6,6 +6,7 @@ const STORAGE_KEY = 'archery_v32_final_data_v5';
 const ROUNDS = [1, 2, 3, 4, 5, 6];
 const FINAL_PRIMARY_ROUNDS = 6;
 const FINAL_ROUNDS_COUNT = 12;
+const MAX_SCORE = 30;
 const EMPTY_BRACKET = {
   roundOf32: [],
   roundOf16: [],
@@ -97,6 +98,8 @@ const createMatch = (id, p1, p2, isFinal = false) => ({
   p2,
   s1: 0,
   s2: 0,
+  shootOffS1: 0,
+  shootOffS2: 0,
   s1_bot: 0,
   s2_bot: 0,
   winner: null,
@@ -105,16 +108,27 @@ const createMatch = (id, p1, p2, isFinal = false) => ({
   roundsP2: Array(FINAL_ROUNDS_COUNT).fill(0),
   submittedRoundsP1: Array(FINAL_PRIMARY_ROUNDS).fill(false),
   submittedRoundsP2: Array(FINAL_PRIMARY_ROUNDS).fill(false),
+  submittedShootOffP1: false,
+  submittedShootOffP2: false,
 });
 
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase();
-const sanitizeNonNegativeNumber = (value, maxLength = 3) => String(value ?? '').replace(/[^\d]/g, '').slice(0, maxLength);
+const sanitizeNonNegativeNumber = (value, maxLength = 2) => {
+  const digitsOnly = String(value ?? '').replace(/[^\d]/g, '').slice(0, maxLength);
+  if (!digitsOnly) {
+    return '';
+  }
+
+  return String(Math.min(Number(digitsOnly), MAX_SCORE));
+};
 const normalizePlayoffDivision = (value) => (['all', 'male', 'female'].includes(value) ? value : 'all');
 const matchesPlayoffDivision = (player, playoffDivision) => playoffDivision === 'all' || player.gender === playoffDivision;
 const normalizePlayoffFinalRounds = (value) => ({
   final12: ROUNDS.includes(Number(value?.final12)) ? Number(value.final12) : DEFAULT_PLAYOFF_FINAL_ROUND,
   final34: ROUNDS.includes(Number(value?.final34)) ? Number(value.final34) : DEFAULT_PLAYOFF_FINAL_ROUND,
 });
+const isStandardPlayoffShootOffActive = (match) =>
+  Boolean(match && !match.isFinal && Number(match.s1) === Number(match.s2) && (match.submittedP1 || match.submittedP2 || match.submittedShootOffP1 || match.submittedShootOffP2));
 
 const createEmptyBracket = () => ({
   roundOf32: [],
@@ -527,6 +541,7 @@ const App = () => {
   const isRemoteHydratedRef = useRef(false);
   const skipNextRemoteSaveRef = useRef(false);
   const preserveLocalChangesUntilRef = useRef(0);
+  const lastLocalMutationAtRef = useRef(0);
   const reportDate = new Date().toLocaleDateString('ru-RU');
 
   const applyTournamentState = (nextState) => {
@@ -606,8 +621,15 @@ const App = () => {
       return;
     }
 
-    preserveLocalChangesUntilRef.current = Date.now() + 5000;
-    saveTournamentState(nextState).catch(() => {});
+    const saveStartedAt = Date.now();
+    preserveLocalChangesUntilRef.current = saveStartedAt + 15000;
+    saveTournamentState(nextState)
+      .then(() => {
+        if (lastLocalMutationAtRef.current <= saveStartedAt) {
+          preserveLocalChangesUntilRef.current = Date.now() + 1000;
+        }
+      })
+      .catch(() => {});
   }, [tournamentName, location, category, playoffDivision, playoffFinalRounds, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, bracket, playoffStage, playoffMode]);
 
   useEffect(() => {
@@ -691,7 +713,6 @@ const App = () => {
   const rankedPlayers = [...players].sort((a, b) => calculateTotal(b.id) - calculateTotal(a.id));
   const filteredRankedPlayers = rankedPlayers.filter((player) => matchesPlayoffDivision(player, playoffDivision));
   const playoffEligiblePlayers = filteredRankedPlayers;
-  const isJournalLocked = playoffStage !== 'none';
   const journalSheetLayout = getJournalSheetLayout(filteredOrderedPlayers.length);
   const bracketStagesForSheet = getBracketStagesForSheet(bracket, playoffMode);
   const scoreSubmissionEntries = (scoreSubmission.entries || []).filter((entry) => {
@@ -792,6 +813,8 @@ const App = () => {
   const updateScore = (playerId, roundId, value) => {
     const sanitizedValue = sanitizeNonNegativeNumber(value);
     const score = Number.parseInt(sanitizedValue, 10);
+    lastLocalMutationAtRef.current = Date.now();
+    preserveLocalChangesUntilRef.current = Date.now() + 15000;
     setScores((prev) => ({
       ...prev,
       [playerId]: {
@@ -862,17 +885,24 @@ const App = () => {
   const resolveWinner = (match) => {
     if (match.s1 > match.s2) return match.p1;
     if (match.s2 > match.s1) return match.p2;
+    if (!match.isFinal) {
+      if (Number(match.shootOffS1) > Number(match.shootOffS2)) return match.p1;
+      if (Number(match.shootOffS2) > Number(match.shootOffS1)) return match.p2;
+      return null;
+    }
     if (match.s1_bot > match.s2_bot) return match.p1;
     if (match.s2_bot > match.s1_bot) return match.p2;
     return null;
   };
 
-  const updateMatch = (stage, matchId, playerNumber, value, roundIndex = 0) => {
+  const updateMatch = (stage, matchId, playerNumber, value, roundIndex = 0, scoreType = 'main') => {
     setBracket((prev) => {
       const next = { ...prev };
 
       const applyUpdate = (match) => {
-        const score = Math.max(0, Number.parseInt(value, 10) || 0);
+        const sanitizedValue = sanitizeNonNegativeNumber(value, 2);
+        const parsedScore = Number.parseInt(sanitizedValue, 10);
+        const score = Number.isNaN(parsedScore) ? 0 : parsedScore;
 
         if (match.isFinal) {
           const finalRoundLimit = playoffFinalRounds[stage] ?? DEFAULT_PLAYOFF_FINAL_ROUND;
@@ -913,10 +943,22 @@ const App = () => {
 
           match.s1_bot = match.roundsP1.slice(FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
           match.s2_bot = match.roundsP2.slice(FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
-        } else if (playerNumber === 1) {
-          match.s1 = score;
         } else {
-          match.s2 = score;
+          if (scoreType === 'shootOff') {
+            if (playerNumber === 1) {
+              match.shootOffS1 = score;
+              match.submittedShootOffP1 = score > 0 || value === '0';
+            } else {
+              match.shootOffS2 = score;
+              match.submittedShootOffP2 = score > 0 || value === '0';
+            }
+          } else if (playerNumber === 1) {
+            match.s1 = score;
+            match.submittedP1 = score > 0 || value === '0';
+          } else {
+            match.s2 = score;
+            match.submittedP2 = score > 0 || value === '0';
+          }
         }
 
         match.winner = resolveWinner(match);
@@ -1308,9 +1350,7 @@ const App = () => {
                   <div className="score-round-manager__summary">
                     <span className="pill">Ачык айлампа: {scoreSubmission.activeRound}</span>
                     <p className="score-round-manager__hint">
-                      {isJournalLocked
-                        ? 'Тор түзүлгөндөн кийин журнал жабык. Мындан ары упай плей-офф бөлүмүндө гана жазылат.'
-                        : 'Оюнчулар азыр ушул айлампага гана упай жаза алышат. 2-айлампаны админ ачмайынча колдонуучулар киргизе албайт.'}
+                      Оюнчулар азыр ушул айлампага гана упай жаза алышат. 2-айлампаны админ ачмайынча колдонуучулар киргизе албайт.
                     </p>
                   </div>
 
@@ -1321,7 +1361,6 @@ const App = () => {
                         type="button"
                         className={`mode-switch__button ${scoreSubmission.activeRound === round ? 'mode-switch__button--active' : ''}`}
                         onClick={() => openScoreRound(round)}
-                        disabled={isJournalLocked}
                       >
                         Айлампа {round}
                       </button>
@@ -1354,8 +1393,7 @@ const App = () => {
                               onChange={(event) => updateScore(player.id, round, event.target.value)}
                               inputMode="numeric"
                               pattern="[0-9]*"
-                              maxLength={3}
-                              disabled={isJournalLocked}
+                              maxLength={2}
                             />
                           </td>
                         ))}
@@ -1628,7 +1666,7 @@ const App = () => {
                   playoffMode={playoffMode}
                   matches={stage.matches}
                   action={stage.action}
-                  onMatchUpdate={(matchId, playerNumber, value) => updateMatch(stage.stageKey, matchId, playerNumber, value)}
+                  onMatchUpdate={(matchId, playerNumber, value, scoreType) => updateMatch(stage.stageKey, matchId, playerNumber, value, 0, scoreType)}
                 />
               ))}
 
@@ -1897,7 +1935,7 @@ const StageColumn = ({ stageKey, title, playoffMode, matches, onMatchUpdate, act
                 <Match
                   match={slot.match}
                   seedNumbers={slot.seedNumbers}
-                  onUpdate={(playerNumber, value) => onMatchUpdate(slot.match.id, playerNumber, value)}
+                  onUpdate={(playerNumber, value, scoreType) => onMatchUpdate(slot.match.id, playerNumber, value, scoreType)}
                 />
               ) : (
                 <PlaceholderMatch />
@@ -1933,6 +1971,7 @@ const PlaceholderMatch = () => (
 
 const Match = ({ match, seedNumbers, onUpdate, activeRound = FINAL_PRIMARY_ROUNDS }) => {
   if (!match) return null;
+  const showShootOff = isStandardPlayoffShootOffActive(match);
 
   if (match.isFinal) {
     return (
@@ -1969,14 +2008,40 @@ const Match = ({ match, seedNumbers, onUpdate, activeRound = FINAL_PRIMARY_ROUND
           {seedNumbers && <span className="match-player__seed">{seedNumbers[0]}</span>}
           <span className="playoff-row__name">{match.p1.name}</span>
         </div>
-        <input type="text" inputMode="numeric" pattern="[0-9]*" className="playoff-score-input" value={match.s1 ?? ''} onChange={(event) => onUpdate(1, event.target.value)} />
+        <div className="playoff-score-stack">
+          <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} className="playoff-score-input" value={match.s1 ?? ''} onChange={(event) => onUpdate(1, event.target.value, 'main')} />
+          {showShootOff && (
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={2}
+              className="playoff-score-input playoff-score-input--shootout"
+              value={match.shootOffS1 ?? ''}
+              onChange={(event) => onUpdate(1, event.target.value, 'shootOff')}
+            />
+          )}
+        </div>
       </div>
       <div className={`playoff-row playoff-row--divided ${match.winner?.id === match.p2.id ? 'playoff-row--winner' : ''}`}>
         <div className="playoff-row__identity">
           {seedNumbers && <span className="match-player__seed">{seedNumbers[1]}</span>}
           <span className="playoff-row__name">{match.p2.name}</span>
         </div>
-        <input type="text" inputMode="numeric" pattern="[0-9]*" className="playoff-score-input" value={match.s2 ?? ''} onChange={(event) => onUpdate(2, event.target.value)} />
+        <div className="playoff-score-stack">
+          <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} className="playoff-score-input" value={match.s2 ?? ''} onChange={(event) => onUpdate(2, event.target.value, 'main')} />
+          {showShootOff && (
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={2}
+              className="playoff-score-input playoff-score-input--shootout"
+              value={match.shootOffS2 ?? ''}
+              onChange={(event) => onUpdate(2, event.target.value, 'shootOff')}
+            />
+          )}
+        </div>
       </div>
     </article>
   );
@@ -1993,6 +2058,7 @@ const FinalPlayer = ({ playerNumber, rounds, name, mainScore, extraScore, isWinn
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
+            maxLength={2}
             className="mini-input"
             value={value ?? ''}
             onChange={(event) => onUpdate(playerNumber, event.target.value, index)}

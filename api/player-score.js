@@ -5,6 +5,7 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY
 const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
 const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
 const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
+const MAX_PLAYER_SCORE = 30
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -72,7 +73,7 @@ const dbToJs = (dbRow) => ({
 
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
-const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= 999
+const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= MAX_PLAYER_SCORE
 const isScoreInputDigitsOnly = (value) => /^\d{1,3}$/.test(String(value || '').trim())
 
 export default async function handler(req, res) {
@@ -109,7 +110,7 @@ export default async function handler(req, res) {
     }
 
     if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
-      return res.status(400).json({ error: 'Упай 0дөн 999га чейинки сан болушу керек.' })
+      return res.status(400).json({ error: `Упай 0дөн ${MAX_PLAYER_SCORE}га чейинки сан болушу керек.` })
     }
 
     const { data: currentData, error: fetchError } = await supabase

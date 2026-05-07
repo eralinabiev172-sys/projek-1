@@ -16,7 +16,12 @@ const request = async (path, options = {}) => {
       const payload = JSON.parse(text)
       throw new Error(payload.error || payload.message || `Request failed: ${response.status}`)
     } catch {
-      throw new Error(text || `Request failed: ${response.status}`)
+      let parsedPayload = null
+      try {
+        parsedPayload = JSON.parse(text)
+      } catch {}
+
+      throw new Error(parsedPayload?.error || parsedPayload?.message || text || `Request failed: ${response.status}`)
     }
   }
 

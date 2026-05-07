@@ -893,11 +893,23 @@
 
 .playoff-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-height: calc(var(--bracket-match-height) / 2);
   padding: 0 10px;
+}
+
+.playoff-score-stack {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.playoff-score-input--shootout {
+  width: 24px;
+  border-color: rgba(59, 130, 246, 0.34);
+  background: rgba(239, 246, 255, 0.95);
 }
 
 .playoff-row--divided {
@@ -1053,8 +1065,8 @@
   --journal-table-height: 188mm;
   --journal-header-row-height: 11mm;
   --journal-row-height: 9mm;
-  --journal-font-size: 0.9rem;
-  --journal-header-font-size: 0.76rem;
+  --journal-font-size: 1.14rem;
+  --journal-header-font-size: 1rem;
   --journal-cell-padding-y: 10px;
   --journal-cell-padding-x: 8px;
 }
@@ -1144,8 +1156,8 @@
   --report-board-gap: 12px;
   --report-stage-width: 112px;
   --report-finals-width: 122px;
-  --report-stage-font-size: 9px;
-  --report-stage-title-font-size: 9px;
+  --report-stage-font-size: 11.5px;
+  --report-stage-title-font-size: 11.5px;
   --report-match-height: 36px;
   background:
     linear-gradient(180deg, rgba(15, 23, 42, 0.02), transparent 80px),
@@ -2357,9 +2369,9 @@
   }
 
   .report-sheet__topline {
-    padding-bottom: 2mm;
-    font-size: 7px;
-  }
+      padding-bottom: 2mm;
+      font-size: 10px;
+    }
 
   #official-report .report-sheet__topline {
     display: flex;
@@ -2420,16 +2432,16 @@
   }
 
   .report-sheet__header h2 {
-    margin-bottom: 2px;
-    font-size: 19px;
-    line-height: 1.2;
-  }
+      margin-bottom: 2px;
+      font-size: 26px;
+      line-height: 1.2;
+    }
 
   #official-report .report-sheet__header h2 {
-    margin: 0;
-    text-align: center;
-    font-size: 27px;
-    font-weight: 500;
+      margin: 0;
+      text-align: center;
+      font-size: 34px;
+      font-weight: 500;
     line-height: 1.15;
     letter-spacing: -0.03em;
   }
@@ -2479,19 +2491,19 @@
   }
 
   .report-stage-column__title {
-    font-size: 8px;
-    padding: 2px 3px;
-  }
+      font-size: 10.5px;
+      padding: 2px 3px;
+    }
 
   .report-match-card__row {
     grid-template-columns: minmax(0, 1fr) 18px;
   }
 
   .report-match-card__name,
-  .report-match-card__score {
-    font-size: 8px;
-    padding-top: 2px;
-    padding-bottom: 2px;
+    .report-match-card__score {
+      font-size: 10.5px;
+      padding-top: 2px;
+      padding-bottom: 2px;
   }
 
   .report-match-card__name {
@@ -2502,13 +2514,13 @@
   .report-final-block,
   .report-final-block__title,
   .report-final-block__legend,
-  .report-final-row__name,
-  .report-final-row__cell,
-  .report-places__table,
-  .report-section-heading,
-  .report-signature-row {
-    font-size: 7px;
-  }
+    .report-final-row__name,
+    .report-final-row__cell,
+    .report-places__table,
+    .report-section-heading,
+    .report-signature-row {
+      font-size: 9.5px;
+    }
 
   .report-final-block {
     width: 112px;
@@ -2557,18 +2569,18 @@
   }
 
   .report-sheet--mode8 .report-sheet__header h2 {
-    font-size: 21px;
-  }
+      font-size: 27px;
+    }
 
   #official-report.report-sheet--mode8 .report-sheet__header h2 {
-    font-size: 29px;
-  }
+      font-size: 35px;
+    }
 
   .report-sheet--mode8 .report-section-heading,
   .report-sheet--mode8 .report-signature-row,
   .report-sheet--mode8 .report-places__table {
-    font-size: 8px;
-  }
+      font-size: 10px;
+    }
 
   .report-sheet--mode8 .report-bracket-layout__board {
     gap: 10px;
@@ -2580,9 +2592,9 @@
   }
 
   .report-sheet--mode8 .report-stage-column__title {
-    font-size: 8.5px;
-    padding: 3px 4px;
-  }
+      font-size: 10.8px;
+      padding: 3px 4px;
+    }
 
   .report-sheet--mode8 .report-match-card__row {
     grid-template-columns: minmax(0, 1fr) 20px;
@@ -2595,8 +2607,8 @@
   .report-sheet--mode8 .report-final-block__legend,
   .report-sheet--mode8 .report-final-row__name,
   .report-sheet--mode8 .report-final-row__cell {
-    font-size: 8px;
-  }
+      font-size: 10px;
+    }
 
   .report-sheet--mode8 .report-final-block {
     width: 122px;
@@ -2611,14 +2623,14 @@
   }
 
   .report-sheet--mode16 .report-sheet__header h2 {
-    font-size: 22px;
-  }
+      font-size: 26px;
+    }
 
   .report-sheet--mode16 .report-section-heading,
   .report-sheet--mode16 .report-signature-row,
   .report-sheet--mode16 .report-places__table {
-    font-size: 7.6px;
-  }
+      font-size: 9.6px;
+    }
 
   .report-sheet--mode16 .report-bracket-layout__board {
     gap: 9px;
@@ -2630,9 +2642,9 @@
   }
 
   .report-sheet--mode16 .report-stage-column__title {
-    font-size: 8.4px;
-    padding: 3px 4px;
-  }
+      font-size: 10px;
+      padding: 3px 4px;
+    }
 
   .report-sheet--mode16 .report-match-card__row {
     grid-template-columns: minmax(0, 1fr) 20px;
@@ -2645,8 +2657,8 @@
   .report-sheet--mode16 .report-final-block__legend,
   .report-sheet--mode16 .report-final-row__name,
   .report-sheet--mode16 .report-final-row__cell {
-    font-size: 7.8px;
-  }
+      font-size: 9.4px;
+    }
 
   .report-sheet--mode16 .report-final-block {
     width: 126px;
@@ -2661,8 +2673,8 @@
   }
 
   .report-sheet--mode32 .report-sheet__header h2 {
-    font-size: 18px;
-  }
+      font-size: 21px;
+    }
 
   .report-sheet--mode32 .report-bracket-layout__board {
     gap: 6px;
@@ -2674,9 +2686,9 @@
   }
 
   .report-sheet--mode32 .report-stage-column__title {
-    font-size: 7px;
-    padding: 2px;
-  }
+      font-size: 8.8px;
+      padding: 2px;
+    }
 
   .report-sheet--mode32 .report-match-card__row {
     grid-template-columns: minmax(0, 1fr) 16px;
@@ -2691,8 +2703,8 @@
   .report-sheet--mode32 .report-final-row__cell,
   .report-sheet--mode32 .report-places__table,
   .report-sheet--mode32 .report-signature-row {
-    font-size: 6.6px;
-  }
+      font-size: 8px;
+    }
 
   .report-sheet--mode32 .report-final-block {
     width: 96px;
@@ -2709,9 +2721,9 @@
   }
 
   .journal-sheet__table {
-    height: var(--journal-table-height);
-    font-size: clamp(6.4px, var(--journal-font-size), 9px);
-  }
+      height: var(--journal-table-height);
+      font-size: clamp(9px, var(--journal-font-size), 12.6px);
+    }
 
   .journal-sheet__col--index {
     width: 6%;
@@ -2735,6 +2747,6 @@
   }
 
   .journal-sheet__table th {
-    font-size: clamp(6px, var(--journal-header-font-size), 8px);
-  }
+      font-size: clamp(8.6px, var(--journal-header-font-size), 10.8px);
+    }
 }

@@ -91,10 +91,18 @@ const playoffStageKeysByMode = {
   4: ['semiFinals'],
 }
 
+const MAX_PLAYER_SCORE = 30
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
 const sanitizePlayerName = (value) => value.replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ')
 const sanitizePhone = (value) => value.replace(/\D/g, '').slice(0, 10)
-const sanitizeNonNegativeNumber = (value) => value.replace(/[^\d]/g, '').slice(0, 3)
+const sanitizeNonNegativeNumber = (value) => {
+  const digitsOnly = value.replace(/[^\d]/g, '').slice(0, 2)
+  if (digitsOnly === '') {
+    return ''
+  }
+
+  return String(Math.min(Number(digitsOnly), MAX_PLAYER_SCORE))
+}
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value.trim())
 const isValidPhone = (value) => /^\d+$/.test(value.trim())
 const normalizePlayoffFinalRounds = (value) => ({
@@ -256,6 +264,16 @@ const getCurrentPlayerFinalRound = (match, isPlayerOne, openedRound) => {
   return safeOpenedRound
 }
 
+const isStandardPlayoffReplayRequired = (match) =>
+  Boolean(match && !match.isFinal && !match.winner && Number(match.s1) === Number(match.s2) && !match.submittedShootOffP1 && !match.submittedShootOffP2)
+const isStandardPlayoffShootOffActive = (match) =>
+  Boolean(
+    match &&
+      !match.isFinal &&
+      Number(match.s1) === Number(match.s2) &&
+      ((match.submittedP1 && match.submittedP2) || Number(match.s1) !== 0 || Number(match.s2) !== 0 || match.submittedShootOffP1 || match.submittedShootOffP2),
+  )
+
 const TargetIcon = ({ size = 20 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
     <circle cx="12" cy="12" r="8" />
@@ -313,6 +331,8 @@ function App() {
       }))
       .sort((left, right) => right.total - left.total)
   }, [tournamentState.players, tournamentState.scores])
+  const maleRatingPlayers = useMemo(() => ratingPlayers.filter((player) => player.gender === 'male'), [ratingPlayers])
+  const femaleRatingPlayers = useMemo(() => ratingPlayers.filter((player) => player.gender === 'female'), [ratingPlayers])
 
   const playoffMatches = useMemo(() => getAllMatches(tournamentState.bracket), [tournamentState.bracket])
   const activeScoreRound = tournamentState.scoreSubmission?.activeRound || 1
@@ -351,11 +371,16 @@ function App() {
       ? getCurrentPlayerFinalRound(playerPlayoffMatch, isPlayerOneInPlayoffMatch, openedPlayoffRound)
       : openedPlayoffRound
   const playoffOpponent = playerPlayoffMatch ? (isPlayerOneInPlayoffMatch ? playerPlayoffMatch.p2 : playerPlayoffMatch.p1) : null
+  const isPlayoffShootOffActive = isStandardPlayoffShootOffActive(playerPlayoffMatch)
   const currentPlayoffScore = playerPlayoffMatch
     ? tournamentState.playoffStage === 'final'
       ? (isPlayerOneInPlayoffMatch
           ? playerPlayoffMatch.roundsP1?.[currentPlayoffRound - 1]
           : playerPlayoffMatch.roundsP2?.[currentPlayoffRound - 1]) ?? ''
+      : isPlayoffShootOffActive
+        ? isPlayerOneInPlayoffMatch
+          ? playerPlayoffMatch.shootOffS1 ?? ''
+          : playerPlayoffMatch.shootOffS2 ?? ''
       : isPlayerOneInPlayoffMatch
         ? playerPlayoffMatch.s1
         : playerPlayoffMatch.s2
@@ -366,6 +391,10 @@ function App() {
         ? isPlayerOneInPlayoffMatch
           ? playerPlayoffMatch.submittedRoundsP1?.[currentPlayoffRound - 1]
           : playerPlayoffMatch.submittedRoundsP2?.[currentPlayoffRound - 1]
+        : isPlayoffShootOffActive
+          ? isPlayerOneInPlayoffMatch
+            ? playerPlayoffMatch.submittedShootOffP1
+            : playerPlayoffMatch.submittedShootOffP2
         : isPlayerOneInPlayoffMatch
           ? playerPlayoffMatch.submittedP1
           : playerPlayoffMatch.submittedP2),
@@ -572,6 +601,11 @@ function App() {
       return
     }
 
+    if (Number(scoreForm.score) > MAX_PLAYER_SCORE) {
+      setScoreMessage(`Максималдуу упай ${MAX_PLAYER_SCORE}.`)
+      return
+    }
+
     if (hasSubmittedCurrentRound) {
       setScoreMessage(`Score for this round is already locked: ${currentRoundScore}. Only the judge can change it.`)
       return
@@ -622,6 +656,11 @@ function App() {
       return
     }
 
+    if (Number(playoffScoreForm.score) > MAX_PLAYER_SCORE) {
+      setPlayoffScoreMessage(`Максималдуу упай ${MAX_PLAYER_SCORE}.`)
+      return
+    }
+
     if (hasSubmittedPlayoffScore) {
       setPlayoffScoreMessage(`Сиз бул беттеш үчүн упайды мурда жөнөткөнсүз: ${currentPlayoffScore}.`)
       return
@@ -635,9 +674,15 @@ function App() {
           score: playoffScoreForm.score,
         }),
       )
+      const refreshedMatch = getPlayerPlayoffMatch(nextState.bracket, nextState.playoffStage, selectedPlayer.id)
+      const replayRequired = isStandardPlayoffReplayRequired(refreshedMatch)
 
       setTournamentState(nextState)
       setPlayoffScoreForm(initialPlayoffScoreForm)
+      if (replayRequired) {
+        setPlayoffScoreMessage('Эсеп тең болду. Бул беттешти кайра атыш керек.')
+        return
+      }
       setPlayoffScoreMessage('Плей-офф үчүн упай жөнөтүлдү.')
     } catch (error) {
       setPlayoffScoreMessage(error.message || 'Плей-офф упайын жөнөтүү мүмкүн болгон жок.')
@@ -859,8 +904,11 @@ function App() {
 
             <div className="rating-board">
               {ratingPlayers.length > 0 ? (
-                <div className="rating-list">
-                  {ratingPlayers.map((player, index) => (
+                <div className="rating-sections">
+                  <RatingSection title="Эркек" players={maleRatingPlayers} emptyLabel="Эркек катышуучулар азырынча жок." prefix="male" />
+                  <RatingSection title="Аял" players={femaleRatingPlayers} emptyLabel="Аял катышуучулар азырынча жок." prefix="female" />
+                  <div className="rating-list" style={{ display: 'none' }}>
+                    {ratingPlayers.map((player, index) => (
                     <article
                       key={player.id}
                       className={`rating-entry ${index < 3 ? `rating-entry--place-${index + 1}` : ''} ${index === 0 ? 'rating-entry--winner' : ''}`}
@@ -873,6 +921,7 @@ function App() {
                       <strong>{player.total}</strong>
                     </article>
                   ))}
+                  </div>
                 </div>
               ) : (
                 <div className="empty-state">Азырынча катышуучулар каттала элек.</div>
@@ -896,7 +945,7 @@ function App() {
                 <div>
                   <p className="eyebrow">Очко жазуу</p>
                   <h3 className="panel__title">Оюнчу упайын жөнөтүү</h3>
-                </div>
+                  </div>
                 <div className="pill">
                   {tournamentState.playoffStage === 'final'
                     ? `Финал A${currentPlayoffRound}`
@@ -930,7 +979,7 @@ function App() {
                     onChange={handlePlayoffScoreChange}
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    maxLength={3}
+                    maxLength={2}
                     disabled={hasSubmittedPlayoffScore || !playerPlayoffMatch}
                     required
                   />
@@ -1021,7 +1070,7 @@ function App() {
                   onChange={handleScoreChange}
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  maxLength={3}
+                  maxLength={2}
                   disabled={hasSubmittedCurrentRound || isJournalLocked}
                   required
                 />
@@ -1129,6 +1178,7 @@ const ReadOnlyPlaceholderMatch = () => (
 
 const ReadOnlyMatch = ({ match, seedNumbers, isFinal = false }) => {
   if (!match) return null
+  const showShootOff = isStandardPlayoffShootOffActive(match)
 
   if (match.isFinal || isFinal) {
     return (
@@ -1159,14 +1209,20 @@ const ReadOnlyMatch = ({ match, seedNumbers, isFinal = false }) => {
           {seedNumbers && <span className="match-player__seed">{seedNumbers[0]}</span>}
           <span className="playoff-row__name">{match.p1?.name || '—'}</span>
         </div>
-        <div className="playoff-row__score">{match.s1}</div>
+        <div className="playoff-row__score-stack">
+          <div className="playoff-row__score">{match.s1}</div>
+          {showShootOff && <div className="playoff-row__score playoff-row__score--shootout">{match.shootOffS1 || ''}</div>}
+        </div>
       </div>
       <div className={`playoff-row playoff-row--divided ${match.winner?.id === match.p2?.id ? 'playoff-row--winner' : ''}`}>
         <div className="playoff-row__identity">
           {seedNumbers && <span className="match-player__seed">{seedNumbers[1]}</span>}
           <span className="playoff-row__name">{match.p2?.name || '—'}</span>
         </div>
-        <div className="playoff-row__score">{match.s2}</div>
+        <div className="playoff-row__score-stack">
+          <div className="playoff-row__score">{match.s2}</div>
+          {showShootOff && <div className="playoff-row__score playoff-row__score--shootout">{match.shootOffS2 || ''}</div>}
+        </div>
       </div>
     </article>
   )
@@ -1201,6 +1257,38 @@ const ReadOnlyFinalPlayer = ({ rounds, name, mainScore, extraScore, isWinner }) 
         ))}
       </div>
     </div>
+  </div>
+)
+
+const RatingSection = ({ title, players, emptyLabel, prefix }) => (
+  <div className="rating-group">
+    <div className="panel__header">
+      <div>
+        <p className="eyebrow">Бөлүм</p>
+        <h4 className="panel__title">{title}</h4>
+      </div>
+      <div className="pill">{players.length}</div>
+    </div>
+
+    {players.length > 0 ? (
+      <div className="rating-list">
+        {players.map((player, index) => (
+          <article
+            key={`${prefix}-${player.id}`}
+            className={`rating-entry ${index < 3 ? `rating-entry--place-${index + 1}` : ''} ${index === 0 ? 'rating-entry--winner' : ''}`}
+          >
+            <div className="rating-entry__place">{index + 1}</div>
+            <div className="rating-entry__content">
+              <h4>{player.name}</h4>
+              <p>{index === 0 ? '1-орун' : index === 1 ? '2-орун' : index === 2 ? '3-орун' : 'Жалпы упай'}</p>
+            </div>
+            <strong>{player.total}</strong>
+          </article>
+        ))}
+      </div>
+    ) : (
+      <div className="empty-state">{emptyLabel}</div>
+    )}
   </div>
 )
 

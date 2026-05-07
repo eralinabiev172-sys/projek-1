@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const dataDir = join(__dirname, 'data')
 const dataFile = join(dataDir, 'tournament-state.json')
 const PORT = Number(process.env.PORT || 8787)
+const MAX_PLAYER_SCORE = 30
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -109,7 +110,7 @@ const readBody = async (request) =>
 
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
-const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= 999
+const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= MAX_PLAYER_SCORE
 const isScoreInputDigitsOnly = (value) => /^\d{1,3}$/.test(String(value || '').trim())
 const PLAYOFF_SUBMISSION_STAGES = ['roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final']
 const normalizeScoreSubmission = (value) => ({
@@ -140,10 +141,22 @@ const resolvePlayoffWinner = (match) => {
   if (!match) return null
   if (Number(match.s1) > Number(match.s2)) return match.p1
   if (Number(match.s2) > Number(match.s1)) return match.p2
+  if (!match.isFinal) {
+    if (Number(match.shootOffS1) > Number(match.shootOffS2)) return match.p1
+    if (Number(match.shootOffS2) > Number(match.shootOffS1)) return match.p2
+    return null
+  }
   if (Number(match.s1_bot) > Number(match.s2_bot)) return match.p1
   if (Number(match.s2_bot) > Number(match.s1_bot)) return match.p2
   return null
 }
+const shouldUseShootOffForStandardMatch = (match) =>
+  Boolean(
+    match &&
+      !match.isFinal &&
+      Number(match.s1) === Number(match.s2) &&
+      ((match.submittedP1 && match.submittedP2) || Number(match.s1) !== 0 || Number(match.s2) !== 0),
+  )
 
 const registerPlayer = async (payload) => {
   const currentState = await readState()
@@ -205,7 +218,7 @@ const submitPlayerScore = async (payload) => {
   }
 
   if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
-    throw new Error('Упай 0дон 999га чейинки сан болушу керек.')
+    throw new Error(`Упай 0дон ${MAX_PLAYER_SCORE}га чейинки сан болушу керек.`)
   }
 
   const player = currentState.players.find((item) => item.id === playerId)
@@ -266,7 +279,7 @@ const submitPlayoffPlayerScore = async (payload) => {
   }
 
   if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
-    throw new Error('РЈРїР°Р№ 0РґРѕРЅ 999РіР° С‡РµР№РёРЅРєРё СЃР°РЅ Р±РѕР»СѓС€Сѓ РєРµСЂРµРє.')
+    throw new Error(`РЈРїР°Р№ 0РґРѕРЅ ${MAX_PLAYER_SCORE}РіР° С‡РµР№РёРЅРєРё СЃР°РЅ Р±РѕР»СѓС€Сѓ РєРµСЂРµРє.`)
   }
 
   const player = currentState.players.find((item) => item.id === playerId)
@@ -290,6 +303,10 @@ const submitPlayoffPlayerScore = async (payload) => {
     roundsP2: Array.isArray(activeMatch.roundsP2) ? [...activeMatch.roundsP2] : Array(12).fill(0),
     submittedRoundsP1: Array.isArray(activeMatch.submittedRoundsP1) ? [...activeMatch.submittedRoundsP1] : Array(6).fill(false),
     submittedRoundsP2: Array.isArray(activeMatch.submittedRoundsP2) ? [...activeMatch.submittedRoundsP2] : Array(6).fill(false),
+    shootOffS1: Number(activeMatch.shootOffS1 || 0),
+    shootOffS2: Number(activeMatch.shootOffS2 || 0),
+    submittedShootOffP1: Boolean(activeMatch.submittedShootOffP1),
+    submittedShootOffP2: Boolean(activeMatch.submittedShootOffP2),
   }
 
   if (currentState.playoffStage === 'final') {
@@ -331,12 +348,19 @@ const submitPlayoffPlayerScore = async (payload) => {
     updatedMatch.s1_bot = updatedMatch.roundsP1.slice(6).reduce((sum, item) => sum + Number(item || 0), 0)
     updatedMatch.s2_bot = updatedMatch.roundsP2.slice(6).reduce((sum, item) => sum + Number(item || 0), 0)
   } else {
-    const submissionKey = isPlayerOne ? 'submittedP1' : 'submittedP2'
-    if (activeMatch[submissionKey]) {
+    const useShootOff = shouldUseShootOffForStandardMatch(updatedMatch)
+    const submissionKey = useShootOff
+      ? isPlayerOne ? 'submittedShootOffP1' : 'submittedShootOffP2'
+      : isPlayerOne ? 'submittedP1' : 'submittedP2'
+    if (updatedMatch[submissionKey]) {
       throw new Error('Бул плей-офф беттеш үчүн упай мурунтан эле жөнөтүлгөн.')
     }
 
-    updatedMatch[isPlayerOne ? 's1' : 's2'] = score
+    if (useShootOff) {
+      updatedMatch[isPlayerOne ? 'shootOffS1' : 'shootOffS2'] = score
+    } else {
+      updatedMatch[isPlayerOne ? 's1' : 's2'] = score
+    }
     updatedMatch[submissionKey] = true
   }
 

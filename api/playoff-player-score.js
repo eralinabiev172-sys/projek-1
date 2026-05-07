@@ -5,6 +5,7 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY
 const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
 const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
 const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
+const MAX_PLAYER_SCORE = 30
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -74,7 +75,7 @@ const dbToJs = (dbRow) => ({
 
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
-const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= 999
+const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= MAX_PLAYER_SCORE
 const isScoreInputDigitsOnly = (value) => /^\d{1,3}$/.test(String(value || '').trim())
 
 const findActivePlayoffMatch = (bracket, playoffStage, playerId) => {
@@ -95,10 +96,22 @@ const resolvePlayoffWinner = (match) => {
   if (!match) return null
   if (Number(match.s1) > Number(match.s2)) return match.p1
   if (Number(match.s2) > Number(match.s1)) return match.p2
+  if (!match.isFinal) {
+    if (Number(match.shootOffS1) > Number(match.shootOffS2)) return match.p1
+    if (Number(match.shootOffS2) > Number(match.shootOffS1)) return match.p2
+    return null
+  }
   if (Number(match.s1_bot) > Number(match.s2_bot)) return match.p1
   if (Number(match.s2_bot) > Number(match.s1_bot)) return match.p2
   return null
 }
+const shouldUseShootOffForStandardMatch = (match) =>
+  Boolean(
+    match &&
+      !match.isFinal &&
+      Number(match.s1) === Number(match.s2) &&
+      ((match.submittedP1 && match.submittedP2) || Number(match.s1) !== 0 || Number(match.s2) !== 0),
+  )
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -134,7 +147,7 @@ export default async function handler(req, res) {
     }
 
     if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
-      return res.status(400).json({ error: 'РЈРїР°Р№ 0РґУ©РЅ 999РіР° С‡РµР№РёРЅРєРё СЃР°РЅ Р±РѕР»СѓС€Сѓ РєРµСЂРµРє.' })
+      return res.status(400).json({ error: `РЈРїР°Р№ 0РґУ©РЅ ${MAX_PLAYER_SCORE}РіР° С‡РµР№РёРЅРєРё СЃР°РЅ Р±РѕР»СѓС€Сѓ РєРµСЂРµРє.` })
     }
 
     const { data: currentData, error: fetchError } = await supabase
@@ -170,6 +183,10 @@ export default async function handler(req, res) {
       roundsP2: Array.isArray(activeMatch.roundsP2) ? [...activeMatch.roundsP2] : Array(12).fill(0),
       submittedRoundsP1: Array.isArray(activeMatch.submittedRoundsP1) ? [...activeMatch.submittedRoundsP1] : Array(6).fill(false),
       submittedRoundsP2: Array.isArray(activeMatch.submittedRoundsP2) ? [...activeMatch.submittedRoundsP2] : Array(6).fill(false),
+      shootOffS1: Number(activeMatch.shootOffS1 || 0),
+      shootOffS2: Number(activeMatch.shootOffS2 || 0),
+      submittedShootOffP1: Boolean(activeMatch.submittedShootOffP1),
+      submittedShootOffP2: Boolean(activeMatch.submittedShootOffP2),
     }
 
     if (currentState.playoffStage === 'final') {
@@ -211,12 +228,19 @@ export default async function handler(req, res) {
       updatedMatch.s1_bot = updatedMatch.roundsP1.slice(6).reduce((sum, item) => sum + Number(item || 0), 0)
       updatedMatch.s2_bot = updatedMatch.roundsP2.slice(6).reduce((sum, item) => sum + Number(item || 0), 0)
     } else {
-      const submissionKey = isPlayerOne ? 'submittedP1' : 'submittedP2'
-      if (activeMatch[submissionKey]) {
+      const useShootOff = shouldUseShootOffForStandardMatch(updatedMatch)
+      const submissionKey = useShootOff
+        ? isPlayerOne ? 'submittedShootOffP1' : 'submittedShootOffP2'
+        : isPlayerOne ? 'submittedP1' : 'submittedP2'
+      if (updatedMatch[submissionKey]) {
         return res.status(409).json({ error: 'Бул плей-офф беттеш үчүн упай мурунтан эле жөнөтүлгөн.' })
       }
 
-      updatedMatch[isPlayerOne ? 's1' : 's2'] = score
+      if (useShootOff) {
+        updatedMatch[isPlayerOne ? 'shootOffS1' : 'shootOffS2'] = score
+      } else {
+        updatedMatch[isPlayerOne ? 's1' : 's2'] = score
+      }
       updatedMatch[submissionKey] = true
     }
 

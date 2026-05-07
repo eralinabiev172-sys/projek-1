@@ -631,7 +631,7 @@
 
 .playoff-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-height: calc(var(--bracket-match-height) / 2);
@@ -762,6 +762,53 @@
 
 .mini-input--accent {
   background: rgba(255, 247, 237, 0.94);
+}
+
+.playoff-row__score-stack {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 64px;
+}
+
+.playoff-row__score--shootout {
+  min-width: 12px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  line-height: inherit;
+}
+
+.rating-sections {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.rating-group {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.rating-group .panel__header {
+  min-height: 72px;
+  align-items: center;
+}
+
+.rating-group .panel__title {
+  margin: 2px 0 0;
+}
+
+@media (max-width: 900px) {
+  .rating-sections {
+    grid-template-columns: 1fr;
+  }
 }
 
 .final-player__card {
