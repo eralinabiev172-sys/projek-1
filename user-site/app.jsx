@@ -1,7 +1,7 @@
 import './app.css'
 
 import { useEffect, useMemo, useState } from 'react'
-import { fetchTournamentState, registerTournamentPlayer, submitPlayerScore } from '../shared/tournamentApi.js'
+import { fetchTournamentState, registerTournamentPlayer, submitPlayerScore, submitPlayoffPlayerScore } from '../shared/tournamentApi.js'
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -20,6 +20,10 @@ const DEFAULT_SCORE_SUBMISSION = {
   activeRound: 1,
   entries: [],
 }
+const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
+  final12: 1,
+  final34: 1,
+}
 
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
@@ -30,6 +34,7 @@ const DEFAULT_STATE = {
   bracket: EMPTY_BRACKET,
   playoffMode: 16,
   playoffStage: 'none',
+  playoffFinalRounds: DEFAULT_PLAYOFF_FINAL_ROUNDS,
   playerNumberBook: {},
   scoreSubmission: DEFAULT_SCORE_SUBMISSION,
 }
@@ -38,10 +43,10 @@ const sections = [
   { id: 'register', label: 'Катталуу' },
   { id: 'login', label: 'Кирүү' },
   { id: 'rating', label: 'Даража' },
+  { id: 'scoreEntry', label: 'Очко жазуу' },
   { id: 'playoff', label: 'Жеке элек' },
 ]
 
-sections.push({ id: 'scoreEntry', label: 'Очко жазуу' })
 
 const seedOrders = {
   32: [0, 31, 15, 16, 7, 24, 8, 23, 4, 27, 11, 20, 3, 28, 12, 19, 1, 30, 14, 17, 6, 25, 9, 22, 5, 26, 10, 21, 2, 29, 13, 18],
@@ -63,6 +68,10 @@ const initialLoginForm = {
 const initialScoreForm = {
   playerId: '',
   phone: '',
+  score: '',
+}
+
+const initialPlayoffScoreForm = {
   score: '',
 }
 
@@ -88,6 +97,10 @@ const sanitizePhone = (value) => value.replace(/\D/g, '').slice(0, 10)
 const sanitizeNonNegativeNumber = (value) => value.replace(/[^\d]/g, '').slice(0, 3)
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value.trim())
 const isValidPhone = (value) => /^\d+$/.test(value.trim())
+const normalizePlayoffFinalRounds = (value) => ({
+  final12: [1, 2, 3, 4, 5, 6].includes(Number(value?.final12)) ? Number(value.final12) : 1,
+  final34: [1, 2, 3, 4, 5, 6].includes(Number(value?.final34)) ? Number(value.final34) : 1,
+})
 const findPlayerByName = (players, name) =>
   players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(name))
 
@@ -175,6 +188,7 @@ const parseTournamentState = (payload) => {
     ...parsed,
     players: sortPlayersByEntryNumber(normalizedPlayers),
     playerNumberBook,
+    playoffFinalRounds: normalizePlayoffFinalRounds(parsed.playoffFinalRounds),
     bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : { ...EMPTY_BRACKET },
     scoreSubmission: {
       ...DEFAULT_SCORE_SUBMISSION,
@@ -215,6 +229,33 @@ const getSeedNumbersForMatch = (playoffMode, stageKey, matchIndex) => {
   return [order[matchIndex * 2] + 1, order[matchIndex * 2 + 1] + 1]
 }
 
+const getPlayerPlayoffMatch = (bracket, playoffStage, playerId) => {
+  if (!playerId || playoffStage === 'none') {
+    return null
+  }
+
+  if (playoffStage === 'final') {
+    const finals = [bracket.final12, bracket.final34].filter(Boolean)
+    return finals.find((match) => match?.p1?.id === playerId || match?.p2?.id === playerId) || null
+  }
+
+  const stageMatches = Array.isArray(bracket?.[playoffStage]) ? bracket[playoffStage] : []
+  return stageMatches.find((match) => match?.p1?.id === playerId || match?.p2?.id === playerId) || null
+}
+
+const getCurrentPlayerFinalRound = (match, isPlayerOne, openedRound) => {
+  const safeOpenedRound = Math.max(1, Math.min(Number(openedRound) || 1, FINAL_PRIMARY_ROUNDS))
+  const submittedRounds = isPlayerOne ? match?.submittedRoundsP1 : match?.submittedRoundsP2
+
+  for (let round = 1; round <= safeOpenedRound; round += 1) {
+    if (!submittedRounds?.[round - 1]) {
+      return round
+    }
+  }
+
+  return safeOpenedRound
+}
+
 const TargetIcon = ({ size = 20 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
     <circle cx="12" cy="12" r="8" />
@@ -228,12 +269,14 @@ function App() {
   const [registrationMessage, setRegistrationMessage] = useState('')
   const [loginMessage, setLoginMessage] = useState('')
   const [scoreMessage, setScoreMessage] = useState('')
+  const [playoffScoreMessage, setPlayoffScoreMessage] = useState('')
   const [tournamentState, setTournamentState] = useState(createEmptyState)
   const [hasLoadedTournamentState, setHasLoadedTournamentState] = useState(false)
   const [registeredPlayer, setRegisteredPlayer] = useState(loadRegisteredPlayer)
   const [registrationForm, setRegistrationForm] = useState(initialRegistrationForm)
   const [loginForm, setLoginForm] = useState(initialLoginForm)
   const [scoreForm, setScoreForm] = useState(initialScoreForm)
+  const [playoffScoreForm, setPlayoffScoreForm] = useState(initialPlayoffScoreForm)
 
   useEffect(() => {
     let isMounted = true
@@ -286,8 +329,50 @@ function App() {
     () => tournamentState.players.find((player) => player.id === registeredPlayer?.playerId) || null,
     [registeredPlayer, tournamentState.players],
   )
+  const playerPlayoffMatch = useMemo(
+    () => getPlayerPlayoffMatch(tournamentState.bracket, tournamentState.playoffStage, registeredPlayer?.playerId),
+    [registeredPlayer, tournamentState.bracket, tournamentState.playoffStage],
+  )
+  const isPlayerOneInPlayoffMatch = playerPlayoffMatch?.p1?.id === registeredPlayer?.playerId
+  const playerPlayoffStageKey =
+    tournamentState.playoffStage === 'final'
+      ? playerPlayoffMatch?.id === 'final34'
+        ? 'final34'
+        : playerPlayoffMatch?.id === 'final12'
+          ? 'final12'
+          : null
+      : tournamentState.playoffStage
+  const openedPlayoffRound =
+    tournamentState.playoffStage === 'final' && playerPlayoffStageKey
+      ? tournamentState.playoffFinalRounds?.[playerPlayoffStageKey] || 1
+      : 1
+  const currentPlayoffRound =
+    tournamentState.playoffStage === 'final' && playerPlayoffMatch
+      ? getCurrentPlayerFinalRound(playerPlayoffMatch, isPlayerOneInPlayoffMatch, openedPlayoffRound)
+      : openedPlayoffRound
+  const playoffOpponent = playerPlayoffMatch ? (isPlayerOneInPlayoffMatch ? playerPlayoffMatch.p2 : playerPlayoffMatch.p1) : null
+  const currentPlayoffScore = playerPlayoffMatch
+    ? tournamentState.playoffStage === 'final'
+      ? (isPlayerOneInPlayoffMatch
+          ? playerPlayoffMatch.roundsP1?.[currentPlayoffRound - 1]
+          : playerPlayoffMatch.roundsP2?.[currentPlayoffRound - 1]) ?? ''
+      : isPlayerOneInPlayoffMatch
+        ? playerPlayoffMatch.s1
+        : playerPlayoffMatch.s2
+    : ''
+  const hasSubmittedPlayoffScore = Boolean(
+    playerPlayoffMatch &&
+      (tournamentState.playoffStage === 'final'
+        ? isPlayerOneInPlayoffMatch
+          ? playerPlayoffMatch.submittedRoundsP1?.[currentPlayoffRound - 1]
+          : playerPlayoffMatch.submittedRoundsP2?.[currentPlayoffRound - 1]
+        : isPlayerOneInPlayoffMatch
+          ? playerPlayoffMatch.submittedP1
+          : playerPlayoffMatch.submittedP2),
+  )
   const currentRoundScore = selectedPlayer ? tournamentState.scores[selectedPlayer.id]?.[activeScoreRound] ?? '' : ''
   const hasSubmittedCurrentRound = currentRoundScore !== '' && currentRoundScore !== null && currentRoundScore !== undefined
+  const isJournalLocked = tournamentState.playoffStage !== 'none'
   const isRegistered = Boolean(selectedPlayer)
   const visibleSections = isRegistered
     ? sections.filter((section) => section.id !== 'register' && section.id !== 'login')
@@ -316,16 +401,18 @@ function App() {
       setRegistrationForm(initialRegistrationForm)
       setLoginForm(initialLoginForm)
       setScoreForm(initialScoreForm)
+      setPlayoffScoreForm(initialPlayoffScoreForm)
       setRegistrationMessage('')
       setLoginMessage('')
       setScoreMessage('')
+      setPlayoffScoreMessage('')
     }
   }, [hasLoadedTournamentState, registeredPlayer, selectedPlayer])
 
   useEffect(() => {
     if (isRegistered) {
       if (activeSection === 'register' || activeSection === 'login') {
-        setActiveSection('rating')
+        setActiveSection('scoreEntry')
       }
       return
     }
@@ -396,7 +483,7 @@ function App() {
         const identity = { playerId: savedPlayer.id, name: savedPlayer.name }
         setRegisteredPlayer(identity)
         saveRegisteredPlayer(identity)
-        setActiveSection('rating')
+        setActiveSection('scoreEntry')
       }
       setRegistrationForm(initialRegistrationForm)
       setLoginForm({ fullName })
@@ -439,7 +526,7 @@ function App() {
     setLoginForm(initialLoginForm)
     setRegistrationMessage('')
     setLoginMessage(`Кош келиңиз, ${matchedPlayer.name}.`)
-    setActiveSection('rating')
+    setActiveSection('scoreEntry')
   }
 
   const handleScoreChange = ({ target }) => {
@@ -453,8 +540,17 @@ function App() {
     setScoreForm((current) => ({ ...current, [name]: value }))
   }
 
+  const handlePlayoffScoreChange = ({ target }) => {
+    setPlayoffScoreForm({ score: sanitizeNonNegativeNumber(target.value) })
+  }
+
   const handleScoreSubmit = async (event) => {
     event.preventDefault()
+
+    if (isJournalLocked) {
+      setScoreMessage('После нажатия "Торду түзүү" журнал закрыт. Теперь очки можно писать только в плей-офф.')
+      return
+    }
 
     if (!scoreForm.playerId) {
       setScoreMessage('Оюнчуну тандаңыз.')
@@ -498,15 +594,67 @@ function App() {
     }
   }
 
+  const handlePlayoffScoreSubmit = async (event) => {
+    event.preventDefault()
+
+    if (!selectedPlayer?.id) {
+      setPlayoffScoreMessage('Оюнчу табылган жок.')
+      return
+    }
+
+    if (!selectedPlayer.phone?.trim()) {
+      setPlayoffScoreMessage('Телефон номери жок.')
+      return
+    }
+
+    if (!playerPlayoffMatch) {
+      setPlayoffScoreMessage('Сиз үчүн ачык плей-офф беттеш жок.')
+      return
+    }
+
+    if (playoffScoreForm.score === '') {
+      setPlayoffScoreMessage('Упайды жазыңыз.')
+      return
+    }
+
+    if (!/^\d+$/.test(playoffScoreForm.score)) {
+      setPlayoffScoreMessage('Only 0 and positive digits are allowed.')
+      return
+    }
+
+    if (hasSubmittedPlayoffScore) {
+      setPlayoffScoreMessage(`Сиз бул беттеш үчүн упайды мурда жөнөткөнсүз: ${currentPlayoffScore}.`)
+      return
+    }
+
+    try {
+      const nextState = parseTournamentState(
+        await submitPlayoffPlayerScore({
+          playerId: selectedPlayer.id,
+          phone: selectedPlayer.phone.trim(),
+          score: playoffScoreForm.score,
+        }),
+      )
+
+      setTournamentState(nextState)
+      setPlayoffScoreForm(initialPlayoffScoreForm)
+      setPlayoffScoreMessage('Плей-офф үчүн упай жөнөтүлдү.')
+    } catch (error) {
+      setPlayoffScoreMessage(error.message || 'Плей-офф упайын жөнөтүү мүмкүн болгон жок.')
+    }
+  }
+
   const handleResetRegistration = () => {
     setRegisteredPlayer(null)
     clearRegisteredPlayer()
     setRegistrationForm(initialRegistrationForm)
     setLoginForm(initialLoginForm)
     setScoreForm(initialScoreForm)
+    setPlayoffScoreForm(initialPlayoffScoreForm)
     setRegistrationMessage('Эски катталуу бул түзмөктөн өчүрүлдү. Эми кайра жаңыдан катталсаңыз болот.')
     setLoginMessage('')
     setScoreMessage('')
+    setPlayoffScoreMessage('')
     setActiveSection('register')
   }
 
@@ -743,6 +891,65 @@ function App() {
               <div className="pill">Авто жаңыланат</div>
             </div>
 
+            {playoffMatches.length > 0 && <div className="playoff-score-panel">
+              <div className="panel__header">
+                <div>
+                  <p className="eyebrow">Очко жазуу</p>
+                  <h3 className="panel__title">Оюнчу упайын жөнөтүү</h3>
+                </div>
+                <div className="pill">
+                  {tournamentState.playoffStage === 'final'
+                    ? `Финал A${currentPlayoffRound}`
+                    : stageTitles[tournamentState.playoffStage] || 'Тор'}
+                </div>
+              </div>
+
+              <div className="info-strip">
+                <span>Бул жерде сиз өз плей-офф беттешиңиз үчүн упай жибере аласыз.</span>
+                <span>Админ ачкан активдүү этапка гана жазуу мүмкүн.</span>
+              </div>
+
+              <form className="form-grid" onSubmit={handlePlayoffScoreSubmit}>
+                <label className="field field--full">
+                  <span className="field__label">Аты</span>
+                  <input className="field__control" value={registeredPlayer?.name || ''} readOnly placeholder="Адегенде катталуу керек" />
+                </label>
+
+                <label className="field field--full">
+                  <span className="field__label">Атаандаш</span>
+                  <input className="field__control" value={playoffOpponent?.name || ''} readOnly placeholder="Атаандаш чыкканда көрүнөт" />
+                </label>
+
+                <label className="field">
+                  <span className="field__label">Упай</span>
+                  <input
+                    type="text"
+                    name="score"
+                    className="field__control"
+                    value={hasSubmittedPlayoffScore ? String(currentPlayoffScore) : playoffScoreForm.score}
+                    onChange={handlePlayoffScoreChange}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={3}
+                    disabled={hasSubmittedPlayoffScore || !playerPlayoffMatch}
+                    required
+                  />
+                </label>
+
+                <div className="note-card field--full">
+                  {playerPlayoffMatch
+                    ? `Активдүү беттеш: ${playoffOpponent?.name || '—'}. ${tournamentState.playoffStage === 'final' ? `A${currentPlayoffRound} үчүн` : ''} сиздин азыркы мааниниз: ${currentPlayoffScore === '' ? 'жок' : currentPlayoffScore}.`
+                    : 'Админ сизди активдүү плей-офф беттешке чыгарганда ошол жерден упай жаза аласыз.'}
+                </div>
+
+                <button type="submit" className="primary-button field--full" disabled={hasSubmittedPlayoffScore || !playerPlayoffMatch}>
+                  Упайды жөнөттүү
+                </button>
+              </form>
+
+              {playoffScoreMessage && <p className="message-line">{playoffScoreMessage}</p>}
+            </div>}
+
             {playoffMatches.length > 0 ? (
               <div
                 className="bracket-grid"
@@ -815,7 +1022,7 @@ function App() {
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={3}
-                  disabled={hasSubmittedCurrentRound}
+                  disabled={hasSubmittedCurrentRound || isJournalLocked}
                   required
                 />
               </label>
@@ -826,7 +1033,7 @@ function App() {
                   : 'Адегенде Катталуу бөлүмүндө атыңызды сактаңыз. Ошондон кийин бул жерде ат автоматтык чыгат.'}
               </div>
 
-              <button type="submit" className="primary-button field--full" disabled={hasSubmittedCurrentRound}>
+              <button type="submit" className="primary-button field--full" disabled={hasSubmittedCurrentRound || isJournalLocked}>
                 Упайды жөнөтүү
               </button>
             </form>

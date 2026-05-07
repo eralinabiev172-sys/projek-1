@@ -21,10 +21,17 @@ const DEFAULT_SCORE_SUBMISSION = {
   entries: [],
 };
 
+const DEFAULT_PLAYOFF_FINAL_ROUND = 1;
+const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
+  final12: DEFAULT_PLAYOFF_FINAL_ROUND,
+  final34: DEFAULT_PLAYOFF_FINAL_ROUND,
+};
+
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
   location: 'Чолпон-Ата, 2026-жыл',
   category: 'Классикалык жаа, 50 метр, эркектер',
+  playoffDivision: 'all',
   headReferee: '',
   headSecretary: '',
   players: [],
@@ -33,6 +40,7 @@ const DEFAULT_STATE = {
   bracket: EMPTY_BRACKET,
   playoffStage: 'none',
   playoffMode: 16,
+  playoffFinalRounds: DEFAULT_PLAYOFF_FINAL_ROUNDS,
   playerNumberBook: {},
   scoreSubmission: DEFAULT_SCORE_SUBMISSION,
 };
@@ -77,6 +85,12 @@ const playoffStageTitles = {
   final12: 'Финал',
 };
 
+const PLAYOFF_DIVISIONS = [
+  { id: 'all', label: 'Баары' },
+  { id: 'male', label: 'Эркек' },
+  { id: 'female', label: 'Аял' },
+];
+
 const createMatch = (id, p1, p2, isFinal = false) => ({
   id,
   p1,
@@ -89,10 +103,18 @@ const createMatch = (id, p1, p2, isFinal = false) => ({
   isFinal,
   roundsP1: Array(FINAL_ROUNDS_COUNT).fill(0),
   roundsP2: Array(FINAL_ROUNDS_COUNT).fill(0),
+  submittedRoundsP1: Array(FINAL_PRIMARY_ROUNDS).fill(false),
+  submittedRoundsP2: Array(FINAL_PRIMARY_ROUNDS).fill(false),
 });
 
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase();
 const sanitizeNonNegativeNumber = (value, maxLength = 3) => String(value ?? '').replace(/[^\d]/g, '').slice(0, maxLength);
+const normalizePlayoffDivision = (value) => (['all', 'male', 'female'].includes(value) ? value : 'all');
+const matchesPlayoffDivision = (player, playoffDivision) => playoffDivision === 'all' || player.gender === playoffDivision;
+const normalizePlayoffFinalRounds = (value) => ({
+  final12: ROUNDS.includes(Number(value?.final12)) ? Number(value.final12) : DEFAULT_PLAYOFF_FINAL_ROUND,
+  final34: ROUNDS.includes(Number(value?.final34)) ? Number(value.final34) : DEFAULT_PLAYOFF_FINAL_ROUND,
+});
 
 const createEmptyBracket = () => ({
   roundOf32: [],
@@ -178,6 +200,8 @@ const parseStoredState = (raw) => {
   return {
     ...DEFAULT_STATE,
     ...parsed,
+    playoffDivision: normalizePlayoffDivision(parsed.playoffDivision),
+    playoffFinalRounds: normalizePlayoffFinalRounds(parsed.playoffFinalRounds),
     players: normalizedPlayers,
     playerDirectory: normalizePlayerDirectory(parsed.playerDirectory || parsed.players || []),
     playerNumberBook,
@@ -479,6 +503,8 @@ const App = () => {
   const [tournamentName, setTournamentName] = useState(initialState.tournamentName);
   const [location, setLocation] = useState(initialState.location);
   const [category, setCategory] = useState(initialState.category);
+  const [playoffDivision, setPlayoffDivision] = useState(normalizePlayoffDivision(initialState.playoffDivision));
+  const [playoffFinalRounds, setPlayoffFinalRounds] = useState(normalizePlayoffFinalRounds(initialState.playoffFinalRounds));
   const [headReferee, setHeadReferee] = useState(initialState.headReferee);
   const [headSecretary, setHeadSecretary] = useState(initialState.headSecretary);
   const [players, setPlayers] = useState(initialState.players);
@@ -500,12 +526,15 @@ const App = () => {
   const [isResetConfirmVisible, setIsResetConfirmVisible] = useState(false);
   const isRemoteHydratedRef = useRef(false);
   const skipNextRemoteSaveRef = useRef(false);
+  const preserveLocalChangesUntilRef = useRef(0);
   const reportDate = new Date().toLocaleDateString('ru-RU');
 
   const applyTournamentState = (nextState) => {
     setTournamentName(nextState.tournamentName);
     setLocation(nextState.location);
     setCategory(nextState.category);
+    setPlayoffDivision(normalizePlayoffDivision(nextState.playoffDivision));
+    setPlayoffFinalRounds(normalizePlayoffFinalRounds(nextState.playoffFinalRounds));
     setHeadReferee(nextState.headReferee);
     setHeadSecretary(nextState.headSecretary);
     setPlayers(nextState.players);
@@ -523,6 +552,8 @@ const App = () => {
       tournamentName,
       location,
       category,
+      playoffDivision,
+      playoffFinalRounds,
       headReferee,
       headSecretary,
       players,
@@ -540,6 +571,9 @@ const App = () => {
       tournamentName === DEFAULT_STATE.tournamentName &&
       location === DEFAULT_STATE.location &&
       category === DEFAULT_STATE.category &&
+      playoffDivision === DEFAULT_STATE.playoffDivision &&
+      playoffFinalRounds.final12 === DEFAULT_STATE.playoffFinalRounds.final12 &&
+      playoffFinalRounds.final34 === DEFAULT_STATE.playoffFinalRounds.final34 &&
       headReferee === DEFAULT_STATE.headReferee &&
       headSecretary === DEFAULT_STATE.headSecretary &&
       players.length === 0 &&
@@ -572,8 +606,9 @@ const App = () => {
       return;
     }
 
+    preserveLocalChangesUntilRef.current = Date.now() + 5000;
     saveTournamentState(nextState).catch(() => {});
-  }, [tournamentName, location, category, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, bracket, playoffStage, playoffMode]);
+  }, [tournamentName, location, category, playoffDivision, playoffFinalRounds, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, bracket, playoffStage, playoffMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -599,6 +634,11 @@ const App = () => {
       try {
         const nextState = parseStoredState(JSON.stringify(await fetchTournamentState()));
         if (!isMounted) {
+          return;
+        }
+
+        if (Date.now() < preserveLocalChangesUntilRef.current) {
+          isRemoteHydratedRef.current = true;
           return;
         }
 
@@ -647,10 +687,17 @@ const App = () => {
   };
 
   const orderedPlayers = sortPlayersByEntryNumber(players);
+  const filteredOrderedPlayers = orderedPlayers.filter((player) => matchesPlayoffDivision(player, playoffDivision));
   const rankedPlayers = [...players].sort((a, b) => calculateTotal(b.id) - calculateTotal(a.id));
-  const journalSheetLayout = getJournalSheetLayout(players.length);
+  const filteredRankedPlayers = rankedPlayers.filter((player) => matchesPlayoffDivision(player, playoffDivision));
+  const playoffEligiblePlayers = filteredRankedPlayers;
+  const isJournalLocked = playoffStage !== 'none';
+  const journalSheetLayout = getJournalSheetLayout(filteredOrderedPlayers.length);
   const bracketStagesForSheet = getBracketStagesForSheet(bracket, playoffMode);
-  const scoreSubmissionEntries = scoreSubmission.entries || [];
+  const scoreSubmissionEntries = (scoreSubmission.entries || []).filter((entry) => {
+    const player = players.find((item) => item.id === entry.playerId);
+    return player ? matchesPlayoffDivision(player, playoffDivision) : playoffDivision === 'all';
+  });
   const visibleStageKeys = getVisibleStageKeys(playoffMode);
   const playersPreviewCount = 3;
   const visiblePlayers = isPlayersListExpanded ? orderedPlayers : orderedPlayers.slice(0, playersPreviewCount);
@@ -658,6 +705,10 @@ const App = () => {
   const playerPositionMap = Object.fromEntries(orderedPlayers.map((player, index) => [player.id, index + 1]));
   const normalizedPlayerSearchQuery = playerSearchQuery.trim().toLocaleLowerCase();
   const filteredPlayerData = playerDirectory.filter((player) => {
+    if (!matchesPlayoffDivision(player, playoffDivision)) {
+      return false;
+    }
+
     if (!normalizedPlayerSearchQuery) {
       return true;
     }
@@ -669,6 +720,8 @@ const App = () => {
       .toLocaleLowerCase()
       .includes(normalizedPlayerSearchQuery);
   });
+  const malePlayersCount = filteredPlayerData.filter((player) => player.gender === 'male').length;
+  const femalePlayersCount = filteredPlayerData.filter((player) => player.gender === 'female').length;
   const playoffStages = visibleStageKeys.map((stageKey) => ({
     stageKey,
     title: playoffStageTitles[stageKey] || stageMeta[stageKey].label,
@@ -760,9 +813,30 @@ const App = () => {
     }));
   };
 
+  const openPlayoffFinalRound = (stageKey, round) => {
+    setPlayoffFinalRounds((prev) => ({
+      ...prev,
+      [stageKey]: round,
+    }));
+  };
+
+  const openNextPlayoffFinalRound = (stageKey) => {
+    setPlayoffFinalRounds((prev) => ({
+      ...prev,
+      [stageKey]: Math.min(prev[stageKey] + 1, ROUNDS.length),
+    }));
+  };
+
+  const openPreviousPlayoffFinalRound = (stageKey) => {
+    setPlayoffFinalRounds((prev) => ({
+      ...prev,
+      [stageKey]: Math.max(prev[stageKey] - 1, 1),
+    }));
+  };
+
   const buildBracket = (limit) => {
     const seeds = seedOrders[limit];
-    const selected = rankedPlayers.slice(0, limit);
+    const selected = playoffEligiblePlayers.slice(0, limit);
 
     while (selected.length < limit) {
       selected.push({ id: `empty-${selected.length}`, name: 'Бош', isEmpty: true });
@@ -781,7 +855,7 @@ const App = () => {
   };
 
   const startPlayoff = () => {
-    if (rankedPlayers.length < 2) return;
+    if (playoffEligiblePlayers.length < 2) return;
     buildBracket(playoffMode);
   };
 
@@ -801,17 +875,44 @@ const App = () => {
         const score = Math.max(0, Number.parseInt(value, 10) || 0);
 
         if (match.isFinal) {
-          const normalized = roundIndex >= FINAL_PRIMARY_ROUNDS ? Math.min(score, 2) : score;
-
-          if (playerNumber === 1) {
-            match.roundsP1[roundIndex] = normalized;
-            match.s1 = match.roundsP1.slice(0, FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
-            match.s1_bot = match.roundsP1.slice(FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
-          } else {
-            match.roundsP2[roundIndex] = normalized;
-            match.s2 = match.roundsP2.slice(0, FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
-            match.s2_bot = match.roundsP2.slice(FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
+          const finalRoundLimit = playoffFinalRounds[stage] ?? DEFAULT_PLAYOFF_FINAL_ROUND;
+          if (roundIndex >= finalRoundLimit) {
+            return;
           }
+
+          if (roundIndex < FINAL_PRIMARY_ROUNDS) {
+            if (playerNumber === 1) {
+              match.roundsP1[roundIndex] = score;
+            } else {
+              match.roundsP2[roundIndex] = score;
+            }
+          }
+
+          match.s1 = match.roundsP1.slice(0, FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
+          match.s2 = match.roundsP2.slice(0, FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
+
+          for (let index = 0; index < FINAL_PRIMARY_ROUNDS; index += 1) {
+            const left = Number(match.roundsP1[index] || 0);
+            const right = Number(match.roundsP2[index] || 0);
+            const bonusIndex = index + FINAL_PRIMARY_ROUNDS;
+
+            if (left === 0 && right === 0) {
+              match.roundsP1[bonusIndex] = 0;
+              match.roundsP2[bonusIndex] = 0;
+            } else if (left > right) {
+              match.roundsP1[bonusIndex] = 2;
+              match.roundsP2[bonusIndex] = 0;
+            } else if (right > left) {
+              match.roundsP1[bonusIndex] = 0;
+              match.roundsP2[bonusIndex] = 2;
+            } else {
+              match.roundsP1[bonusIndex] = 1;
+              match.roundsP2[bonusIndex] = 1;
+            }
+          }
+
+          match.s1_bot = match.roundsP1.slice(FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
+          match.s2_bot = match.roundsP2.slice(FINAL_PRIMARY_ROUNDS).reduce((sum, item) => sum + item, 0);
         } else if (playerNumber === 1) {
           match.s1 = score;
         } else {
@@ -913,8 +1014,10 @@ const App = () => {
     setTournamentName(DEFAULT_STATE.tournamentName);
     setLocation(DEFAULT_STATE.location);
     setCategory(DEFAULT_STATE.category);
+    setPlayoffDivision(DEFAULT_STATE.playoffDivision);
     setHeadReferee(DEFAULT_STATE.headReferee);
     setHeadSecretary(DEFAULT_STATE.headSecretary);
+    setPlayoffFinalRounds(DEFAULT_STATE.playoffFinalRounds);
     setPlayers([]);
     setPlayerDirectory(preservedPlayerDirectory);
     setPlayerNumberBook({});
@@ -1060,6 +1163,22 @@ const App = () => {
                   </label>
                 </div>
 
+                <div className="field">
+                  <span className="field__label">Плей-офф категориясы</span>
+                  <div className="mode-switch">
+                    {PLAYOFF_DIVISIONS.map((division) => (
+                      <button
+                        key={division.id}
+                        type="button"
+                        onClick={() => setPlayoffDivision(division.id)}
+                        className={`mode-switch__button ${playoffDivision === division.id ? 'mode-switch__button--active' : ''}`}
+                      >
+                        {division.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="field-row field-row--accent">
                   <label className="field">
                     <span className="field__label">Башкы калыс</span>
@@ -1189,7 +1308,9 @@ const App = () => {
                   <div className="score-round-manager__summary">
                     <span className="pill">Ачык айлампа: {scoreSubmission.activeRound}</span>
                     <p className="score-round-manager__hint">
-                      Оюнчулар азыр ушул айлампага гана упай жаза алышат. 2-айлампаны админ ачмайынча колдонуучулар киргизе албайт.
+                      {isJournalLocked
+                        ? 'Тор түзүлгөндөн кийин журнал жабык. Мындан ары упай плей-офф бөлүмүндө гана жазылат.'
+                        : 'Оюнчулар азыр ушул айлампага гана упай жаза алышат. 2-айлампаны админ ачмайынча колдонуучулар киргизе албайт.'}
                     </p>
                   </div>
 
@@ -1200,6 +1321,7 @@ const App = () => {
                         type="button"
                         className={`mode-switch__button ${scoreSubmission.activeRound === round ? 'mode-switch__button--active' : ''}`}
                         onClick={() => openScoreRound(round)}
+                        disabled={isJournalLocked}
                       >
                         Айлампа {round}
                       </button>
@@ -1220,7 +1342,7 @@ const App = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {orderedPlayers.map((player) => (
+                    {filteredOrderedPlayers.map((player) => (
                       <tr key={player.id}>
                         <td className="score-table__name">{player.name}</td>
                         {ROUNDS.map((round) => (
@@ -1233,6 +1355,7 @@ const App = () => {
                               inputMode="numeric"
                               pattern="[0-9]*"
                               maxLength={3}
+                              disabled={isJournalLocked}
                             />
                           </td>
                         ))}
@@ -1241,6 +1364,34 @@ const App = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="submission-feed">
+                <div className="panel__header">
+                  <div>
+                    <p className="eyebrow">Оюнчулардан келди</p>
+                    <h3 className="panel__title">Акыркы жөнөтүлгөн упайлар</h3>
+                  </div>
+                  <div className="pill">{scoreSubmissionEntries.length}</div>
+                </div>
+
+                {scoreSubmissionEntries.length > 0 ? (
+                  <div className="submission-feed__list">
+                    {scoreSubmissionEntries.slice(0, 12).map((entry) => (
+                      <article key={entry.id} className="submission-feed__item">
+                        <div>
+                          <strong>{entry.playerName}</strong>
+                          <p className="submission-feed__meta">
+                            Айлампа {entry.round} • {formatSubmissionTimestamp(entry.submittedAt)}
+                          </p>
+                        </div>
+                        <div className="submission-feed__value">{entry.score}</div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">Оюнчулардан жөнөтүлгөн упай азырынча жок.</div>
+                )}
               </div>
             </div>
 
@@ -1288,8 +1439,8 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {players.length > 0 ? (
-                        rankedPlayers.map((player, index) => (
+                      {filteredRankedPlayers.length > 0 ? (
+                        filteredRankedPlayers.map((player, index) => (
                           <tr key={player.id}>
                             <td>{index + 1}</td>
                             <td className="journal-sheet__name">{player.name}</td>
@@ -1339,6 +1490,8 @@ const App = () => {
                 <h3 className="panel__title">Оюнчулардын толук тизмеси</h3>
               </div>
               <div className="panel__header-actions">
+                <div className="pill">Эркек: {malePlayersCount}</div>
+                <div className="pill">Аял: {femalePlayersCount}</div>
                 <button type="button" className="secondary-button" onClick={clearPlayerDirectory}>
                   Тизмени тазалоо
                 </button>
@@ -1392,7 +1545,7 @@ const App = () => {
                     </div>
                   </article>
                 ))
-              ) : orderedPlayers.length > 0 ? (
+              ) : filteredOrderedPlayers.length > 0 ? (
                 <div className="empty-state">Мындай оюнчу табылган жок.</div>
               ) : (
                 <div className="empty-state">Оюнчулардын сакталган тизмеси азырынча бош.</div>
@@ -1407,6 +1560,10 @@ const App = () => {
               <div>
                 <p className="eyebrow">Тандоо</p>
                 <h3 className="panel__title">Жыйынтык жана тандоо</h3>
+                <p>
+                  Плей-оффко азыр <strong>{PLAYOFF_DIVISIONS.find((division) => division.id === playoffDivision)?.label || 'Баары'}</strong>{' '}
+                  категориясындагы {playoffEligiblePlayers.length} оюнчу кирет.
+                </p>
               </div>
 
               <div className="mode-switch">
@@ -1424,7 +1581,7 @@ const App = () => {
             </div>
 
             <div className="rating-list">
-              {rankedPlayers.map((player, index) => (
+              {playoffEligiblePlayers.map((player, index) => (
                 <article key={player.id} className={`rating-card ${index < playoffMode ? 'rating-card--selected' : ''}`}>
                   <div className="rating-card__left">
                     <div className="rating-badge">{index + 1}</div>
@@ -1482,18 +1639,94 @@ const App = () => {
                     <h4>{playoffStageTitles.final12}</h4>
                   </div>
 
+                  <div className="score-round-manager score-round-manager--compact">
+                    <div className="score-round-manager__summary">
+                      <span className="pill">А{playoffFinalRounds.final12}</span>
+                    </div>
+
+                    <div className="mode-switch mode-switch--compact">
+                      {ROUNDS.slice(0, playoffFinalRounds.final12).map((round) => (
+                        <button
+                          key={`final12-round-${round}`}
+                          type="button"
+                          className={`mode-switch__button ${playoffFinalRounds.final12 === round ? 'mode-switch__button--active' : ''}`}
+                          onClick={() => openPlayoffFinalRound('final12', round)}
+                        >
+                          А{round}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="mode-switch__button mode-switch__button--plus"
+                        onClick={() => openPreviousPlayoffFinalRound('final12')}
+                        disabled={playoffFinalRounds.final12 <= 1}
+                        aria-label="Мурунку айлампа"
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        className="mode-switch__button mode-switch__button--plus"
+                        onClick={() => openNextPlayoffFinalRound('final12')}
+                        disabled={playoffFinalRounds.final12 >= ROUNDS.length}
+                        aria-label="Кийинки айлампа"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
                   {bracket.final12 && (
                     <Match
                       match={bracket.final12}
                       isFinal
+                      activeRound={playoffFinalRounds.final12}
                       onUpdate={(playerNumber, value, roundIndex) => updateMatch('final12', null, playerNumber, value, roundIndex)}
                     />
                   )}
+
+                  <div className="score-round-manager score-round-manager--compact">
+                    <div className="score-round-manager__summary">
+                      <span className="pill">А{playoffFinalRounds.final34}</span>
+                    </div>
+
+                    <div className="mode-switch mode-switch--compact">
+                      {ROUNDS.slice(0, playoffFinalRounds.final34).map((round) => (
+                        <button
+                          key={`final34-round-${round}`}
+                          type="button"
+                          className={`mode-switch__button ${playoffFinalRounds.final34 === round ? 'mode-switch__button--active' : ''}`}
+                          onClick={() => openPlayoffFinalRound('final34', round)}
+                        >
+                          А{round}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="mode-switch__button mode-switch__button--plus"
+                        onClick={() => openPreviousPlayoffFinalRound('final34')}
+                        disabled={playoffFinalRounds.final34 <= 1}
+                        aria-label="Мурунку айлампа 3-4"
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        className="mode-switch__button mode-switch__button--plus"
+                        onClick={() => openNextPlayoffFinalRound('final34')}
+                        disabled={playoffFinalRounds.final34 >= ROUNDS.length}
+                        aria-label="Кийинки айлампа 3-4"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
 
                   {bracket.final34 && (
                     <Match
                       match={bracket.final34}
                       isFinal
+                      activeRound={playoffFinalRounds.final34}
                       onUpdate={(playerNumber, value, roundIndex) => updateMatch('final34', null, playerNumber, value, roundIndex)}
                     />
                   )}
@@ -1698,7 +1931,7 @@ const PlaceholderMatch = () => (
   </article>
 );
 
-const Match = ({ match, seedNumbers, onUpdate }) => {
+const Match = ({ match, seedNumbers, onUpdate, activeRound = FINAL_PRIMARY_ROUNDS }) => {
   if (!match) return null;
 
   if (match.isFinal) {
@@ -1711,6 +1944,7 @@ const Match = ({ match, seedNumbers, onUpdate }) => {
           mainScore={match.s1}
           extraScore={match.s1_bot}
           isWinner={match.winner?.id === match.p1.id}
+          activeRound={activeRound}
           onUpdate={onUpdate}
         />
         <div className="match-divider" />
@@ -1721,6 +1955,7 @@ const Match = ({ match, seedNumbers, onUpdate }) => {
           mainScore={match.s2}
           extraScore={match.s2_bot}
           isWinner={match.winner?.id === match.p2.id}
+          activeRound={activeRound}
           onUpdate={onUpdate}
         />
       </article>
@@ -1734,30 +1969,32 @@ const Match = ({ match, seedNumbers, onUpdate }) => {
           {seedNumbers && <span className="match-player__seed">{seedNumbers[0]}</span>}
           <span className="playoff-row__name">{match.p1.name}</span>
         </div>
-        <input type="number" className="playoff-score-input" value={match.s1 || ''} onChange={(event) => onUpdate(1, event.target.value)} />
+        <input type="text" inputMode="numeric" pattern="[0-9]*" className="playoff-score-input" value={match.s1 ?? ''} onChange={(event) => onUpdate(1, event.target.value)} />
       </div>
       <div className={`playoff-row playoff-row--divided ${match.winner?.id === match.p2.id ? 'playoff-row--winner' : ''}`}>
         <div className="playoff-row__identity">
           {seedNumbers && <span className="match-player__seed">{seedNumbers[1]}</span>}
           <span className="playoff-row__name">{match.p2.name}</span>
         </div>
-        <input type="number" className="playoff-score-input" value={match.s2 || ''} onChange={(event) => onUpdate(2, event.target.value)} />
+        <input type="text" inputMode="numeric" pattern="[0-9]*" className="playoff-score-input" value={match.s2 ?? ''} onChange={(event) => onUpdate(2, event.target.value)} />
       </div>
     </article>
   );
 };
 
-const FinalPlayer = ({ playerNumber, rounds, name, mainScore, extraScore, isWinner, onUpdate }) => (
+const FinalPlayer = ({ playerNumber, rounds, name, mainScore, extraScore, isWinner, onUpdate, activeRound }) => (
   <div className={`final-player ${isWinner ? 'final-player--winner' : ''}`}>
     <div className="final-rounds-group">
       <div className="final-rounds-group__label">Негизги</div>
       <div className="final-rounds">
-        {rounds.slice(0, FINAL_PRIMARY_ROUNDS).map((value, index) => (
+        {rounds.slice(0, activeRound).map((value, index) => (
           <input
             key={index}
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className="mini-input"
-            value={value || ''}
+            value={value ?? ''}
             onChange={(event) => onUpdate(playerNumber, event.target.value, index)}
           />
         ))}
@@ -1773,13 +2010,16 @@ const FinalPlayer = ({ playerNumber, rounds, name, mainScore, extraScore, isWinn
     <div className="final-rounds-group">
       <div className="final-rounds-group__label">Кошумча</div>
       <div className="final-rounds">
-        {rounds.slice(FINAL_PRIMARY_ROUNDS).map((value, index) => (
+        {rounds.slice(FINAL_PRIMARY_ROUNDS, FINAL_PRIMARY_ROUNDS + activeRound).map((value, index) => (
           <input
             key={index + FINAL_PRIMARY_ROUNDS}
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className="mini-input mini-input--accent"
-            value={value || ''}
-            onChange={(event) => onUpdate(playerNumber, event.target.value, index + FINAL_PRIMARY_ROUNDS)}
+            value={value ?? ''}
+            readOnly
+            tabIndex={-1}
           />
         ))}
       </div>

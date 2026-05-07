@@ -42,3 +42,9 @@ export const submitPlayerScore = async (payload) =>
     method: 'POST',
     body: JSON.stringify(payload),
   })
+
+export const submitPlayoffPlayerScore = async (payload) =>
+  request('/playoff-player-score', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
