@@ -329,6 +329,7 @@ function App() {
   const [playoffScoreMessage, setPlayoffScoreMessage] = useState('')
   const [tournamentState, setTournamentState] = useState(createEmptyState)
   const [hasLoadedTournamentState, setHasLoadedTournamentState] = useState(false)
+  const [hasSuccessfulTournamentSync, setHasSuccessfulTournamentSync] = useState(false)
   const [registeredPlayer, setRegisteredPlayer] = useState(loadRegisteredPlayer)
   const [registrationForm, setRegistrationForm] = useState(initialRegistrationForm)
   const [loginForm, setLoginForm] = useState(initialLoginForm)
@@ -344,10 +345,11 @@ function App() {
         if (isMounted) {
           setTournamentState(nextState)
           setHasLoadedTournamentState(true)
+          setHasSuccessfulTournamentSync(true)
         }
       } catch {
         if (isMounted) {
-          setTournamentState(createEmptyState())
+          setHasLoadedTournamentState(true)
         }
       }
     }
@@ -465,7 +467,7 @@ function App() {
       return
     }
 
-    if (hasLoadedTournamentState && !selectedPlayer) {
+    if (hasLoadedTournamentState && hasSuccessfulTournamentSync && !selectedPlayer) {
       setRegisteredPlayer(null)
       clearRegisteredPlayer()
       setRegistrationForm(initialRegistrationForm)
@@ -477,7 +479,7 @@ function App() {
       setScoreMessage('')
       setPlayoffScoreMessage('')
     }
-  }, [hasLoadedTournamentState, registeredPlayer, selectedPlayer])
+  }, [hasLoadedTournamentState, hasSuccessfulTournamentSync, registeredPlayer, selectedPlayer])
 
   useEffect(() => {
     if (isRegistered) {
