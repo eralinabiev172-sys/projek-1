@@ -19,6 +19,13 @@ const EMPTY_BRACKET = {
   winners: [],
 }
 
+const createEmptyCompetitionState = () => ({
+  playoffMode: 16,
+  playoffStage: 'none',
+  playoffFinalRounds: { final12: 1, final34: 1 },
+  bracket: { ...EMPTY_BRACKET },
+})
+
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
   location: 'Чолпон-Ата, 2026-жыл',
@@ -28,10 +35,10 @@ const DEFAULT_STATE = {
   headSecretary: '',
   players: [],
   scores: {},
-  bracket: EMPTY_BRACKET,
-  playoffStage: 'none',
-  playoffMode: 16,
-  playoffFinalRounds: { final12: 1, final34: 1 },
+  competitionDivisions: {
+    male: createEmptyCompetitionState(),
+    female: createEmptyCompetitionState(),
+  },
   playerNumberBook: {},
   scoreSubmission: {
     activeRound: 1,
@@ -63,15 +70,14 @@ const readState = async () => {
       ...DEFAULT_STATE,
       ...parsed,
       playoffDivision: normalizePlayoffDivision(parsed.playoffDivision),
-      playoffFinalRounds: normalizePlayoffFinalRounds(parsed.playoffFinalRounds),
-      bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : { ...EMPTY_BRACKET },
+      competitionDivisions: normalizeCompetitionDivisions(parsed.competitionDivisions, parsed),
       players: Array.isArray(parsed.players) ? parsed.players : [],
       scores: parsed.scores || {},
       playerNumberBook: parsed.playerNumberBook || {},
       scoreSubmission: normalizeScoreSubmission(parsed.scoreSubmission),
     }
   } catch {
-    return { ...DEFAULT_STATE, bracket: { ...EMPTY_BRACKET } }
+    return { ...DEFAULT_STATE }
   }
 }
 
@@ -122,6 +128,50 @@ const normalizePlayoffFinalRounds = (value) => ({
   final12: [1, 2, 3, 4, 5, 6].includes(Number(value?.final12)) ? Number(value.final12) : 1,
   final34: [1, 2, 3, 4, 5, 6].includes(Number(value?.final34)) ? Number(value.final34) : 1,
 })
+const normalizeCompetitionState = (value) => ({
+  playoffMode: [32, 16, 8, 4].includes(Number(value?.playoffMode)) ? Number(value.playoffMode) : 16,
+  playoffStage: PLAYOFF_SUBMISSION_STAGES.includes(value?.playoffStage) || value?.playoffStage === 'none' || value?.playoffStage === 'final'
+    ? value?.playoffStage || 'none'
+    : 'none',
+  playoffFinalRounds: normalizePlayoffFinalRounds(value?.playoffFinalRounds),
+  bracket: value?.bracket ? { ...EMPTY_BRACKET, ...value.bracket } : { ...EMPTY_BRACKET },
+})
+const normalizeCompetitionDivisions = (value, legacy = {}) => {
+  const defaults = {
+    male: createEmptyCompetitionState(),
+    female: createEmptyCompetitionState(),
+  }
+
+  if (value && typeof value === 'object') {
+    return {
+      male: normalizeCompetitionState(value.male),
+      female: normalizeCompetitionState(value.female),
+    }
+  }
+
+  const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+  const hasLegacyBracket = Boolean(
+    legacy.bracket &&
+      (legacy.bracket.final12 ||
+        legacy.bracket.final34 ||
+        legacy.bracket.winners?.length ||
+        legacy.bracket.roundOf32?.length ||
+        legacy.bracket.roundOf16?.length ||
+        legacy.bracket.quarterFinals?.length ||
+        legacy.bracket.semiFinals?.length),
+  )
+
+  if (hasLegacyBracket || legacy.playoffStage !== 'none') {
+    defaults[legacyDivision] = normalizeCompetitionState({
+      playoffMode: legacy.playoffMode,
+      playoffStage: legacy.playoffStage,
+      playoffFinalRounds: legacy.playoffFinalRounds,
+      bracket: legacy.bracket,
+    })
+  }
+
+  return defaults
+}
 
 const findActivePlayoffMatch = (bracket, playoffStage, playerId) => {
   if (playoffStage === 'final') {
@@ -291,7 +341,9 @@ const submitPlayoffPlayerScore = async (payload) => {
     throw new Error('РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё РґР°Р» РєРµР»РіРµРЅ Р¶РѕРє.')
   }
 
-  const activeMatch = findActivePlayoffMatch(currentState.bracket, currentState.playoffStage, playerId)
+  const divisionId = player.gender === 'female' ? 'female' : 'male'
+  const divisionState = normalizeCompetitionState(currentState.competitionDivisions?.[divisionId])
+  const activeMatch = findActivePlayoffMatch(divisionState.bracket, divisionState.playoffStage, playerId)
   if (!activeMatch) {
     throw new Error('Сиз үчүн ачык плей-офф беттеш табылган жок.')
   }
@@ -309,9 +361,9 @@ const submitPlayoffPlayerScore = async (payload) => {
     submittedShootOffP2: Boolean(activeMatch.submittedShootOffP2),
   }
 
-  if (currentState.playoffStage === 'final') {
+  if (divisionState.playoffStage === 'final') {
     const finalStageKey = activeMatch.id === 'final34' ? 'final34' : 'final12'
-    const activeRound = currentState.playoffFinalRounds?.[finalStageKey] || 1
+    const activeRound = divisionState.playoffFinalRounds?.[finalStageKey] || 1
     const submittedRoundsKey = isPlayerOne ? 'submittedRoundsP1' : 'submittedRoundsP2'
     const roundsKey = isPlayerOne ? 'roundsP1' : 'roundsP2'
 
@@ -366,22 +418,28 @@ const submitPlayoffPlayerScore = async (payload) => {
 
   updatedMatch.winner = resolvePlayoffWinner(updatedMatch)
 
-  const nextBracket = { ...currentState.bracket }
-  if (currentState.playoffStage === 'final') {
+  const nextBracket = { ...divisionState.bracket }
+  if (divisionState.playoffStage === 'final') {
     if (nextBracket.final12?.id === updatedMatch.id) {
       nextBracket.final12 = updatedMatch
     } else if (nextBracket.final34?.id === updatedMatch.id) {
       nextBracket.final34 = updatedMatch
     }
   } else {
-    nextBracket[currentState.playoffStage] = (nextBracket[currentState.playoffStage] || []).map((match) =>
+    nextBracket[divisionState.playoffStage] = (nextBracket[divisionState.playoffStage] || []).map((match) =>
       match.id === updatedMatch.id ? updatedMatch : match,
     )
   }
 
   const nextState = {
     ...currentState,
-    bracket: nextBracket,
+    competitionDivisions: {
+      ...normalizeCompetitionDivisions(currentState.competitionDivisions, currentState),
+      [divisionId]: {
+        ...divisionState,
+        bracket: nextBracket,
+      },
+    },
   }
 
   await writeState(nextState)
@@ -413,8 +471,7 @@ const server = createServer(async (request, response) => {
         ...DEFAULT_STATE,
         ...body,
         playoffDivision: normalizePlayoffDivision(body.playoffDivision),
-        playoffFinalRounds: normalizePlayoffFinalRounds(body.playoffFinalRounds),
-        bracket: body.bracket ? { ...EMPTY_BRACKET, ...body.bracket } : { ...EMPTY_BRACKET },
+        competitionDivisions: normalizeCompetitionDivisions(body.competitionDivisions, body),
         players: Array.isArray(body.players) ? body.players : [],
         scores: body.scores || {},
         playerNumberBook: body.playerNumberBook || {},

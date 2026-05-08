@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:client": "vite --configLoader native",
-    "dev:admin": "vite --configLoader native --open /admin/",
-    "dev:user": "vite --configLoader native --open /",
+    "dev:admin": "node scripts/dev.mjs admin",
+    "dev:user": "node scripts/dev.mjs user",
     "dev:server": "node backend/server.mjs",
     "build": "vite build",
     "lint": "eslint .",

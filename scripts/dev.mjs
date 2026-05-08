@@ -2,6 +2,13 @@ import { spawn } from 'node:child_process'
 
 const children = []
 let shuttingDown = false
+const mode = process.argv[2] || 'default'
+
+const clientArgsByMode = {
+  admin: ['run', 'dev:client', '--', '--host', '0.0.0.0', '--open', '/admin/'],
+  user: ['run', 'dev:client', '--', '--host', '0.0.0.0', '--open', '/'],
+  default: ['run', 'dev:client', '--', '--host', '0.0.0.0'],
+}
 
 const run = (label, command, args) => {
   const child = spawn(command, args, {
@@ -49,4 +56,4 @@ process.on('SIGINT', cleanup)
 process.on('SIGTERM', cleanup)
 
 run('backend', 'npm.cmd', ['run', 'dev:server'])
-run('client', 'npm.cmd', ['run', 'dev:client', '--', '--host', '0.0.0.0'])
+run('client', 'npm.cmd', clientArgsByMode[mode] || clientArgsByMode.default)

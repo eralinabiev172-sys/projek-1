@@ -27,6 +27,39 @@ const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
   final12: DEFAULT_PLAYOFF_FINAL_ROUND,
   final34: DEFAULT_PLAYOFF_FINAL_ROUND,
 };
+const COMPETITION_DIVISIONS = [
+  { id: 'male', label: 'Эркек' },
+  { id: 'female', label: 'Аял' },
+];
+const DEFAULT_COMPETITION_DIVISION = 'male';
+
+function createEmptyBracket() {
+  return {
+    roundOf32: [],
+    roundOf16: [],
+    quarterFinals: [],
+    semiFinals: [],
+    final12: null,
+    final34: null,
+    winners: [],
+  };
+}
+
+function createEmptyCompetitionState() {
+  return {
+    playoffMode: 16,
+    playoffStage: 'none',
+    playoffFinalRounds: { ...DEFAULT_PLAYOFF_FINAL_ROUNDS },
+    bracket: createEmptyBracket(),
+  };
+}
+
+function createDefaultCompetitionDivisions() {
+  return {
+    male: createEmptyCompetitionState(),
+    female: createEmptyCompetitionState(),
+  };
+}
 
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
@@ -38,16 +71,13 @@ const DEFAULT_STATE = {
   players: [],
   playerDirectory: [],
   scores: {},
-  bracket: EMPTY_BRACKET,
-  playoffStage: 'none',
-  playoffMode: 16,
-  playoffFinalRounds: DEFAULT_PLAYOFF_FINAL_ROUNDS,
+  competitionDivisions: createDefaultCompetitionDivisions(),
   playerNumberBook: {},
   scoreSubmission: DEFAULT_SCORE_SUBMISSION,
 };
 
 const seedOrders = {
-  32: [0, 31, 15, 16, 7, 24, 8, 23, 4, 27, 11, 20, 3, 28, 12, 19, 1, 30, 14, 17, 6, 25, 9, 22, 5, 26, 10, 21, 2, 29, 13, 18],
+  32: [0, 31, 15, 16, 7, 24, 8, 23, 4, 27, 11, 20, 3, 28, 12, 19, 2, 29, 13, 18, 5, 26, 10, 21, 6, 25, 9, 22, 1, 30, 14, 17],
   16: [0, 15, 7, 8, 4, 11, 3, 12, 2, 13, 5, 10, 6, 9, 1, 14],
   8: [0, 7, 3, 4, 1, 6, 2, 5],
   4: [0, 3, 1, 2],
@@ -113,6 +143,8 @@ const createMatch = (id, p1, p2, isFinal = false) => ({
 });
 
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase();
+const sanitizePlayerText = (value) => String(value ?? '').replace(/\s{2,}/g, ' ').trimStart();
+const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 10);
 const sanitizeNonNegativeNumber = (value, maxLength = 2) => {
   const digitsOnly = String(value ?? '').replace(/[^\d]/g, '').slice(0, maxLength);
   if (!digitsOnly) {
@@ -130,15 +162,53 @@ const normalizePlayoffFinalRounds = (value) => ({
 const isStandardPlayoffShootOffActive = (match) =>
   Boolean(match && !match.isFinal && Number(match.s1) === Number(match.s2) && (match.submittedP1 || match.submittedP2 || match.submittedShootOffP1 || match.submittedShootOffP2));
 
-const createEmptyBracket = () => ({
-  roundOf32: [],
-  roundOf16: [],
-  quarterFinals: [],
-  semiFinals: [],
-  final12: null,
-  final34: null,
-  winners: [],
+const normalizeCompetitionState = (value) => ({
+  playoffMode: [32, 16, 8, 4].includes(Number(value?.playoffMode)) ? Number(value.playoffMode) : 16,
+  playoffStage: ['none', 'roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final'].includes(value?.playoffStage)
+    ? value.playoffStage
+    : 'none',
+  playoffFinalRounds: normalizePlayoffFinalRounds(value?.playoffFinalRounds),
+  bracket: value?.bracket ? { ...EMPTY_BRACKET, ...value.bracket } : createEmptyBracket(),
 });
+
+const normalizeCompetitionDivisions = (value, legacyState = {}) => {
+  const defaults = createDefaultCompetitionDivisions();
+
+  if (value && typeof value === 'object') {
+    return {
+      male: normalizeCompetitionState(value.male),
+      female: normalizeCompetitionState(value.female),
+    };
+  }
+
+  const legacyDivision = legacyState.playoffDivision === 'female' ? 'female' : 'male';
+  const hasLegacyBracket =
+    legacyState.bracket &&
+    !isEmptyBracket({ ...EMPTY_BRACKET, ...legacyState.bracket });
+
+  if (hasLegacyBracket || legacyState.playoffStage !== 'none') {
+    defaults[legacyDivision] = normalizeCompetitionState({
+      playoffMode: legacyState.playoffMode,
+      playoffStage: legacyState.playoffStage,
+      playoffFinalRounds: legacyState.playoffFinalRounds,
+      bracket: legacyState.bracket,
+    });
+  }
+
+  return defaults;
+};
+
+const isCompetitionDivisionsPristine = (competitionDivisions) =>
+  COMPETITION_DIVISIONS.every((division) => {
+    const state = competitionDivisions?.[division.id] || createEmptyCompetitionState();
+    return (
+      state.playoffMode === 16 &&
+      state.playoffStage === 'none' &&
+      state.playoffFinalRounds.final12 === DEFAULT_PLAYOFF_FINAL_ROUNDS.final12 &&
+      state.playoffFinalRounds.final34 === DEFAULT_PLAYOFF_FINAL_ROUNDS.final34 &&
+      isEmptyBracket(state.bracket)
+    );
+  });
 
 const buildPlayerNumberBook = (players, savedBook = {}) => {
   const nextBook = { ...savedBook };
@@ -193,6 +263,39 @@ const normalizePlayerDirectory = (players) =>
     })),
   );
 
+const renamePlayerInMatch = (match, playerId, nextName) => {
+  if (!match) {
+    return match;
+  }
+
+  const nextMatch = { ...match };
+
+  if (nextMatch.p1?.id === playerId) {
+    nextMatch.p1 = { ...nextMatch.p1, name: nextName };
+  }
+
+  if (nextMatch.p2?.id === playerId) {
+    nextMatch.p2 = { ...nextMatch.p2, name: nextName };
+  }
+
+  if (nextMatch.winner?.id === playerId) {
+    nextMatch.winner = { ...nextMatch.winner, name: nextName };
+  }
+
+  return nextMatch;
+};
+
+const renamePlayerInBracket = (bracket, playerId, nextName) => ({
+  ...bracket,
+  roundOf32: (bracket.roundOf32 || []).map((match) => renamePlayerInMatch(match, playerId, nextName)),
+  roundOf16: (bracket.roundOf16 || []).map((match) => renamePlayerInMatch(match, playerId, nextName)),
+  quarterFinals: (bracket.quarterFinals || []).map((match) => renamePlayerInMatch(match, playerId, nextName)),
+  semiFinals: (bracket.semiFinals || []).map((match) => renamePlayerInMatch(match, playerId, nextName)),
+  final12: bracket.final12 ? renamePlayerInMatch(bracket.final12, playerId, nextName) : null,
+  final34: bracket.final34 ? renamePlayerInMatch(bracket.final34, playerId, nextName) : null,
+  winners: (bracket.winners || []).map((player) => (player.id === playerId ? { ...player, name: nextName } : player)),
+});
+
 const isEmptyBracket = (bracket) =>
   !bracket.final12 &&
   !bracket.final34 &&
@@ -215,11 +318,10 @@ const parseStoredState = (raw) => {
     ...DEFAULT_STATE,
     ...parsed,
     playoffDivision: normalizePlayoffDivision(parsed.playoffDivision),
-    playoffFinalRounds: normalizePlayoffFinalRounds(parsed.playoffFinalRounds),
     players: normalizedPlayers,
     playerDirectory: normalizePlayerDirectory(parsed.playerDirectory || parsed.players || []),
     playerNumberBook,
-    bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : EMPTY_BRACKET,
+    competitionDivisions: normalizeCompetitionDivisions(parsed.competitionDivisions, parsed),
     scoreSubmission: {
       ...DEFAULT_SCORE_SUBMISSION,
       ...(parsed.scoreSubmission || {}),
@@ -518,7 +620,7 @@ const App = () => {
   const [location, setLocation] = useState(initialState.location);
   const [category, setCategory] = useState(initialState.category);
   const [playoffDivision, setPlayoffDivision] = useState(normalizePlayoffDivision(initialState.playoffDivision));
-  const [playoffFinalRounds, setPlayoffFinalRounds] = useState(normalizePlayoffFinalRounds(initialState.playoffFinalRounds));
+  const [viewDivision, setViewDivision] = useState(DEFAULT_COMPETITION_DIVISION);
   const [headReferee, setHeadReferee] = useState(initialState.headReferee);
   const [headSecretary, setHeadSecretary] = useState(initialState.headSecretary);
   const [players, setPlayers] = useState(initialState.players);
@@ -526,18 +628,20 @@ const App = () => {
   const [playerNumberBook, setPlayerNumberBook] = useState(initialState.playerNumberBook);
   const [scores, setScores] = useState(initialState.scores);
   const [scoreSubmission, setScoreSubmission] = useState(initialState.scoreSubmission || DEFAULT_SCORE_SUBMISSION);
+  const [competitionDivisions, setCompetitionDivisions] = useState(initialState.competitionDivisions || createDefaultCompetitionDivisions());
   const [activeTab, setActiveTab] = useState('players');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerGender, setNewPlayerGender] = useState('male');
   const [playerSearchQuery, setPlayerSearchQuery] = useState('');
+  const [journalSearchQuery, setJournalSearchQuery] = useState('');
+  const [editingPlayerId, setEditingPlayerId] = useState(null);
+  const [editingPlayerName, setEditingPlayerName] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPlayersListExpanded, setIsPlayersListExpanded] = useState(false);
-  const [playoffMode, setPlayoffMode] = useState(initialState.playoffMode);
-  const [playoffStage, setPlayoffStage] = useState(initialState.playoffStage);
-  const [bracket, setBracket] = useState(initialState.bracket);
   const [printTarget, setPrintTarget] = useState(null);
   const [isResetConfirmVisible, setIsResetConfirmVisible] = useState(false);
+  const [apiNotice, setApiNotice] = useState('');
   const isRemoteHydratedRef = useRef(false);
   const skipNextRemoteSaveRef = useRef(false);
   const preserveLocalChangesUntilRef = useRef(0);
@@ -549,7 +653,6 @@ const App = () => {
     setLocation(nextState.location);
     setCategory(nextState.category);
     setPlayoffDivision(normalizePlayoffDivision(nextState.playoffDivision));
-    setPlayoffFinalRounds(normalizePlayoffFinalRounds(nextState.playoffFinalRounds));
     setHeadReferee(nextState.headReferee);
     setHeadSecretary(nextState.headSecretary);
     setPlayers(nextState.players);
@@ -557,9 +660,7 @@ const App = () => {
     setPlayerNumberBook(nextState.playerNumberBook);
     setScores(nextState.scores || {});
     setScoreSubmission(nextState.scoreSubmission || DEFAULT_SCORE_SUBMISSION);
-    setBracket(nextState.bracket);
-    setPlayoffStage(nextState.playoffStage);
-    setPlayoffMode(nextState.playoffMode);
+    setCompetitionDivisions(nextState.competitionDivisions || createDefaultCompetitionDivisions());
   };
 
   useEffect(() => {
@@ -568,7 +669,6 @@ const App = () => {
       location,
       category,
       playoffDivision,
-      playoffFinalRounds,
       headReferee,
       headSecretary,
       players,
@@ -576,10 +676,8 @@ const App = () => {
       playerNumberBook,
       scores,
       scoreSubmission,
+      competitionDivisions,
       rounds: ROUNDS,
-      bracket,
-      playoffStage,
-      playoffMode,
     };
 
     const isPristine =
@@ -587,8 +685,6 @@ const App = () => {
       location === DEFAULT_STATE.location &&
       category === DEFAULT_STATE.category &&
       playoffDivision === DEFAULT_STATE.playoffDivision &&
-      playoffFinalRounds.final12 === DEFAULT_STATE.playoffFinalRounds.final12 &&
-      playoffFinalRounds.final34 === DEFAULT_STATE.playoffFinalRounds.final34 &&
       headReferee === DEFAULT_STATE.headReferee &&
       headSecretary === DEFAULT_STATE.headSecretary &&
       players.length === 0 &&
@@ -597,9 +693,7 @@ const App = () => {
       Object.keys(scores).length === 0 &&
       scoreSubmission.activeRound === DEFAULT_SCORE_SUBMISSION.activeRound &&
       scoreSubmission.entries.length === 0 &&
-      playoffStage === DEFAULT_STATE.playoffStage &&
-      playoffMode === DEFAULT_STATE.playoffMode &&
-      isEmptyBracket(bracket);
+      isCompetitionDivisionsPristine(competitionDivisions);
 
     if (isPristine) {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -625,12 +719,17 @@ const App = () => {
     preserveLocalChangesUntilRef.current = saveStartedAt + 15000;
     saveTournamentState(nextState)
       .then(() => {
+        setApiNotice('');
         if (lastLocalMutationAtRef.current <= saveStartedAt) {
           preserveLocalChangesUntilRef.current = Date.now() + 1000;
         }
       })
-      .catch(() => {});
-  }, [tournamentName, location, category, playoffDivision, playoffFinalRounds, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, bracket, playoffStage, playoffMode]);
+      .catch((error) => {
+        if (error?.code === 'API_UNAVAILABLE') {
+          setApiNotice(error.message);
+        }
+      });
+  }, [tournamentName, location, category, playoffDivision, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, competitionDivisions]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -668,9 +767,14 @@ const App = () => {
         applyTournamentState(nextState);
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
         isRemoteHydratedRef.current = true;
-      } catch {
+        setApiNotice('');
+      } catch (error) {
         if (!isMounted) {
           return;
+        }
+
+        if (error?.code === 'API_UNAVAILABLE') {
+          setApiNotice(error.message);
         }
 
         isRemoteHydratedRef.current = true;
@@ -703,21 +807,60 @@ const App = () => {
     });
   }, [players]);
 
+  const activeCompetitionState = competitionDivisions[viewDivision] || createEmptyCompetitionState();
+  const playoffMode = activeCompetitionState.playoffMode;
+  const playoffStage = activeCompetitionState.playoffStage;
+  const playoffFinalRounds = activeCompetitionState.playoffFinalRounds;
+  const bracket = activeCompetitionState.bracket;
+
+  const updateCompetitionState = (divisionId, updater) => {
+    setCompetitionDivisions((prev) => {
+      const current = prev[divisionId] || createEmptyCompetitionState();
+      const nextValue = typeof updater === 'function' ? updater(current) : { ...current, ...updater };
+      return {
+        ...prev,
+        [divisionId]: normalizeCompetitionState(nextValue),
+      };
+    });
+  };
+
+  const setBracket = (value) => {
+    updateCompetitionState(viewDivision, (current) => ({
+      ...current,
+      bracket: typeof value === 'function' ? value(current.bracket) : value,
+    }));
+  };
+
+  const setPlayoffStage = (value) => {
+    updateCompetitionState(viewDivision, { playoffStage: value });
+  };
+
+  const setPlayoffMode = (value) => {
+    updateCompetitionState(viewDivision, { playoffMode: value });
+  };
+
+  const setPlayoffFinalRounds = (value) => {
+    updateCompetitionState(viewDivision, (current) => ({
+      ...current,
+      playoffFinalRounds: typeof value === 'function' ? value(current.playoffFinalRounds) : value,
+    }));
+  };
+
   const calculateTotal = (playerId) => {
     const playerScores = scores[playerId] || {};
     return Object.values(playerScores).reduce((sum, value) => sum + Number(value || 0), 0);
   };
 
   const orderedPlayers = sortPlayersByEntryNumber(players);
-  const filteredOrderedPlayers = orderedPlayers.filter((player) => matchesPlayoffDivision(player, playoffDivision));
+  const filteredOrderedPlayers = orderedPlayers.filter((player) => player.gender === viewDivision);
   const rankedPlayers = [...players].sort((a, b) => calculateTotal(b.id) - calculateTotal(a.id));
-  const filteredRankedPlayers = rankedPlayers.filter((player) => matchesPlayoffDivision(player, playoffDivision));
+  const filteredRankedPlayers = rankedPlayers.filter((player) => player.gender === viewDivision);
   const playoffEligiblePlayers = filteredRankedPlayers;
   const journalSheetLayout = getJournalSheetLayout(filteredOrderedPlayers.length);
   const bracketStagesForSheet = getBracketStagesForSheet(bracket, playoffMode);
   const scoreSubmissionEntries = (scoreSubmission.entries || []).filter((entry) => {
     const player = players.find((item) => item.id === entry.playerId);
-    return player ? matchesPlayoffDivision(player, playoffDivision) : playoffDivision === 'all';
+    return player ? player.gender === viewDivision : false;
   });
   const visibleStageKeys = getVisibleStageKeys(playoffMode);
   const playersPreviewCount = 3;
@@ -725,6 +868,7 @@ const App = () => {
   const hiddenPlayersCount = Math.max(orderedPlayers.length - playersPreviewCount, 0);
   const playerPositionMap = Object.fromEntries(orderedPlayers.map((player, index) => [player.id, index + 1]));
   const normalizedPlayerSearchQuery = playerSearchQuery.trim().toLocaleLowerCase();
+  const normalizedJournalSearchQuery = journalSearchQuery.trim().toLocaleLowerCase();
   const filteredPlayerData = playerDirectory.filter((player) => {
     if (!matchesPlayoffDivision(player, playoffDivision)) {
       return false;
@@ -740,6 +884,18 @@ const App = () => {
       .join(' ')
       .toLocaleLowerCase()
       .includes(normalizedPlayerSearchQuery);
+  });
+  const journalSearchPlayers = filteredOrderedPlayers.filter((player) => {
+    if (!normalizedJournalSearchQuery) {
+      return false;
+    }
+
+    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'аял' : '';
+
+    return [player.name || '', player.phone || '', genderLabel]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(normalizedJournalSearchQuery);
   });
   const malePlayersCount = filteredPlayerData.filter((player) => player.gender === 'male').length;
   const femalePlayersCount = filteredPlayerData.filter((player) => player.gender === 'female').length;
@@ -761,7 +917,7 @@ const App = () => {
   const addPlayer = async () => {
     const name = newPlayerName.trim();
     if (!name) return;
-    const phone = newPlayerPhone.trim();
+    const phone = sanitizePhone(newPlayerPhone.trim());
 
     try {
       // Отправляем данные на сервер
@@ -779,7 +935,48 @@ const App = () => {
       setNewPlayerName('');
       setNewPlayerPhone('');
       setNewPlayerGender('male');
+      setApiNotice('');
     } catch (error) {
+      if (error?.code === 'API_UNAVAILABLE') {
+        const normalizedName = normalizePlayerName(name);
+        const existsByName = players.some((player) => normalizePlayerName(player.name || '') === normalizedName);
+        const existsByPhone = phone && players.some((player) => sanitizePhone(player.phone) === phone);
+
+        if (existsByName) {
+          alert('Мындай аттагы оюнчу мурда кошулган.');
+          return;
+        }
+
+        if (existsByPhone) {
+          alert('Мындай телефон номери менен оюнчу мурда кошулган.');
+          return;
+        }
+
+        const highestNumber = Math.max(0, ...Object.values(playerNumberBook || {}).map((value) => Number(value) || 0));
+        const entryNumber = highestNumber + 1;
+        const localPlayer = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name,
+          phone,
+          gender: newPlayerGender,
+          entryNumber,
+        };
+
+        lastLocalMutationAtRef.current = Date.now();
+        preserveLocalChangesUntilRef.current = Date.now() + 15000;
+        setPlayers((prev) => normalizeStoredPlayers([...prev, localPlayer], playerNumberBook));
+        setPlayerDirectory((prev) => normalizePlayerDirectory([...prev, localPlayer]));
+        setPlayerNumberBook((prev) => ({
+          ...prev,
+          [normalizedName]: entryNumber,
+        }));
+        setNewPlayerName('');
+        setNewPlayerPhone('');
+        setNewPlayerGender('male');
+        setApiNotice('Backend жеткиликсиз. Оюнчу локалдык түрдө кошулду.');
+        return;
+      }
+
       // Показываем ошибку пользователю
       alert(`Оюнчу кошууда ката кетти: ${error.message || 'Белгисиз ката'}`);
       console.error('Failed to add player:', error);
@@ -810,6 +1007,67 @@ const App = () => {
     });
   };
 
+  const startEditingPlayer = (player) => {
+    setEditingPlayerId(player.id);
+    setEditingPlayerName(player.name || '');
+  };
+
+  const cancelEditingPlayer = () => {
+    setEditingPlayerId(null);
+    setEditingPlayerName('');
+  };
+
+  const savePlayerName = (playerId) => {
+    const nextName = sanitizePlayerText(editingPlayerName).trim();
+    const currentPlayer = players.find((player) => player.id === playerId);
+
+    if (!currentPlayer || !nextName) {
+      return;
+    }
+
+    const currentNormalizedName = normalizePlayerName(currentPlayer.name || '');
+    const nextNormalizedName = normalizePlayerName(nextName);
+    const entryNumber = currentPlayer.entryNumber;
+
+    lastLocalMutationAtRef.current = Date.now();
+    preserveLocalChangesUntilRef.current = Date.now() + 15000;
+
+    setPlayers((prev) =>
+      normalizeStoredPlayers(
+        prev.map((player) => (player.id === playerId ? { ...player, name: nextName } : player)),
+        playerNumberBook,
+      ),
+    );
+    setPlayerDirectory((prev) =>
+      normalizePlayerDirectory(prev.map((player) => (player.id === playerId ? { ...player, name: nextName } : player))),
+    );
+    setPlayerNumberBook((prev) => {
+      const nextBook = { ...prev };
+
+      if (currentNormalizedName && nextBook[currentNormalizedName] === entryNumber) {
+        const hasSameOldName = players.some(
+          (player) => player.id !== playerId && normalizePlayerName(player.name || '') === currentNormalizedName,
+        );
+
+        if (!hasSameOldName) {
+          delete nextBook[currentNormalizedName];
+        }
+      }
+
+      if (nextNormalizedName) {
+        nextBook[nextNormalizedName] = entryNumber;
+      }
+
+      return nextBook;
+    });
+    setScoreSubmission((prev) => ({
+      ...prev,
+      entries: (prev.entries || []).map((entry) => (entry.playerId === playerId ? { ...entry, playerName: nextName } : entry)),
+    }));
+    setBracket((prev) => renamePlayerInBracket(prev, playerId, nextName));
+    cancelEditingPlayer();
+  };
+
   const updateScore = (playerId, roundId, value) => {
     const sanitizedValue = sanitizeNonNegativeNumber(value);
     const score = Number.parseInt(sanitizedValue, 10);
@@ -827,6 +1085,16 @@ const App = () => {
   const clearPlayerDirectory = () => {
     setPlayerDirectory([]);
     setPlayerSearchQuery('');
+  };
+
+  const removePlayerFromDirectory = (playerId) => {
+    lastLocalMutationAtRef.current = Date.now();
+    preserveLocalChangesUntilRef.current = Date.now() + 15000;
+    setPlayerDirectory((prev) => prev.filter((player) => player.id !== playerId));
+
+    if (editingPlayerId === playerId) {
+      cancelEditingPlayer();
+    }
   };
 
   const openScoreRound = (round) => {
@@ -1059,15 +1327,13 @@ const App = () => {
     setPlayoffDivision(DEFAULT_STATE.playoffDivision);
     setHeadReferee(DEFAULT_STATE.headReferee);
     setHeadSecretary(DEFAULT_STATE.headSecretary);
-    setPlayoffFinalRounds(DEFAULT_STATE.playoffFinalRounds);
+    setCompetitionDivisions(createDefaultCompetitionDivisions());
     setPlayers([]);
     setPlayerDirectory(preservedPlayerDirectory);
     setPlayerNumberBook({});
     setScores({});
     setScoreSubmission(DEFAULT_SCORE_SUBMISSION);
-    setBracket(createEmptyBracket());
-    setPlayoffStage(DEFAULT_STATE.playoffStage);
-    setPlayoffMode(DEFAULT_STATE.playoffMode);
+    setViewDivision(DEFAULT_COMPETITION_DIVISION);
     setActiveTab('players');
     setNewPlayerName('');
     setNewPlayerPhone('');
@@ -1129,6 +1395,16 @@ const App = () => {
       </header>
 
       <main className="page">
+        {apiNotice && (
+          <section className="confirm-banner">
+            <div>
+              <p className="eyebrow">Локалдык режим</p>
+              <h3 className="confirm-banner__title">Backend азыр жеткиликсиз</h3>
+              <p className="confirm-banner__text">{apiNotice} Бардык өзгөртүү браузерде сакталат.</p>
+            </div>
+          </section>
+        )}
+
         {isResetConfirmVisible && (
           <section className="confirm-banner">
             <div>
@@ -1164,8 +1440,8 @@ const App = () => {
               <strong>{players.length}</strong>
             </div>
             <div className="stat-chip">
-              <span className="stat-chip__label">Топ</span>
-              <strong>{playoffMode}</strong>
+              <span className="stat-chip__label">Бөлүм</span>
+              <strong>{COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Эркек'}</strong>
             </div>
             <div className="stat-chip">
               <span className="stat-chip__label">Этап</span>
@@ -1342,11 +1618,23 @@ const App = () => {
             <div className="panel">
               <div className="panel__header panel__header--stack">
                 <div>
-                  <p className="eyebrow">Квалификация</p>
-                  <h3 className="panel__title">Упай журналы</h3>
-                </div>
+                    <p className="eyebrow">Квалификация</p>
+                    <h3 className="panel__title">Упай журналы</h3>
+                  </div>
 
-                <div className="score-round-manager">
+                  <div className="score-round-manager">
+                  <div className="mode-switch">
+                    {COMPETITION_DIVISIONS.map((division) => (
+                      <button
+                        key={division.id}
+                        type="button"
+                        className={`mode-switch__button ${viewDivision === division.id ? 'mode-switch__button--active' : ''}`}
+                        onClick={() => setViewDivision(division.id)}
+                      >
+                        {division.label}
+                      </button>
+                    ))}
+                  </div>
                   <div className="score-round-manager__summary">
                     <span className="pill">Ачык айлампа: {scoreSubmission.activeRound}</span>
                     <p className="score-round-manager__hint">
@@ -1368,6 +1656,54 @@ const App = () => {
                   </div>
                 </div>
               </div>
+
+              <div className="player-search">
+                <input
+                  className="field__control"
+                  placeholder="Журналдан издөө: аты, телефон же жынысы"
+                  value={journalSearchQuery}
+                  onChange={(event) => setJournalSearchQuery(event.target.value)}
+                />
+              </div>
+
+              {normalizedJournalSearchQuery && (
+                <div className="journal-search-results">
+                  {journalSearchPlayers.length > 0 ? (
+                    journalSearchPlayers.map((player) => (
+                      <article key={`journal-search-${player.id}`} className="journal-quick-card">
+                        <div className="journal-quick-card__header">
+                          <div>
+                            <h4>{player.name}</h4>
+                            <p>
+                              № {playerPositionMap[player.id] ?? '—'} • {player.phone || 'Телефон жок'}
+                            </p>
+                          </div>
+                          <strong>{calculateTotal(player.id)}</strong>
+                        </div>
+
+                        <div className="journal-quick-card__grid">
+                          {ROUNDS.map((round) => (
+                            <label key={`${player.id}-quick-round-${round}`} className="field">
+                              <span className="field__label">Айлампа {round}</span>
+                              <input
+                                type="text"
+                                className="field__control"
+                                value={scores[player.id]?.[round] ?? ''}
+                                onChange={(event) => updateScore(player.id, round, event.target.value)}
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={2}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="empty-state">Бул ат менен журналдан оюнчу табылган жок.</div>
+                  )}
+                </div>
+              )}
 
               <div className="table-wrap">
                 <table className="score-table">
@@ -1448,7 +1784,7 @@ const App = () => {
               <div className="report-sheet__header report-sheet__header--compact">
                 <h2>{tournamentName}</h2>
                 <p className="report-sheet__meta">{location}</p>
-                <p className="report-sheet__badge">{category}</p>
+                <p className="report-sheet__badge">{category} • {COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label}</p>
               </div>
 
               <section className="report-sheet__body">
@@ -1564,7 +1900,25 @@ const App = () => {
                     <div className="player-data-card__grid">
                       <div className="player-data-field">
                         <span>Аты-жөнү</span>
-                        <strong>{player.name}</strong>
+                        {editingPlayerId === player.id ? (
+                          <input
+                            className="field__control"
+                            value={editingPlayerName}
+                            onChange={(event) => setEditingPlayerName(sanitizePlayerText(event.target.value))}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                savePlayerName(player.id);
+                              }
+
+                              if (event.key === 'Escape') {
+                                cancelEditingPlayer();
+                              }
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          <strong>{player.name}</strong>
+                        )}
                       </div>
                       <div className="player-data-field">
                         <span>Телефон номери</span>
@@ -1580,6 +1934,32 @@ const App = () => {
                               : player.gender || 'Азырынча кошулган эмес'}
                         </strong>
                       </div>
+                    </div>
+
+                    <div className="player-data-card__actions">
+                      {editingPlayerId === player.id ? (
+                        <>
+                          <button type="button" className="primary-button" onClick={() => savePlayerName(player.id)}>
+                            Сактоо
+                          </button>
+                          <button type="button" className="secondary-button secondary-button--auto" onClick={cancelEditingPlayer}>
+                            Жокко чыгаруу
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className="secondary-button secondary-button--auto" onClick={() => startEditingPlayer(player)}>
+                            Атын оңдоо
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => removePlayerFromDirectory(player.id)}
+                          >
+                            Өчүрүү
+                          </button>
+                        </>
+                      )}
                     </div>
                   </article>
                 ))
@@ -1599,9 +1979,22 @@ const App = () => {
                 <p className="eyebrow">Тандоо</p>
                 <h3 className="panel__title">Жыйынтык жана тандоо</h3>
                 <p>
-                  Плей-оффко азыр <strong>{PLAYOFF_DIVISIONS.find((division) => division.id === playoffDivision)?.label || 'Баары'}</strong>{' '}
+                  Плей-оффко азыр <strong>{COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Эркек'}</strong>{' '}
                   категориясындагы {playoffEligiblePlayers.length} оюнчу кирет.
                 </p>
+              </div>
+
+              <div className="mode-switch">
+                {COMPETITION_DIVISIONS.map((division) => (
+                  <button
+                    key={division.id}
+                    type="button"
+                    onClick={() => setViewDivision(division.id)}
+                    className={`mode-switch__button ${viewDivision === division.id ? 'mode-switch__button--active' : ''}`}
+                  >
+                    {division.label}
+                  </button>
+                ))}
               </div>
 
               <div className="mode-switch">
@@ -1646,7 +2039,19 @@ const App = () => {
             <div className="panel__header">
               <div>
                 <p className="eyebrow">Финалдык тор</p>
-                <h3 className="panel__title">Беттеш тору</h3>
+                <h3 className="panel__title">Беттеш тору: {COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label}</h3>
+              </div>
+              <div className="mode-switch">
+                {COMPETITION_DIVISIONS.map((division) => (
+                  <button
+                    key={division.id}
+                    type="button"
+                    onClick={() => setViewDivision(division.id)}
+                    className={`mode-switch__button ${viewDivision === division.id ? 'mode-switch__button--active' : ''}`}
+                  >
+                    {division.label}
+                  </button>
+                ))}
               </div>
             </div>
 

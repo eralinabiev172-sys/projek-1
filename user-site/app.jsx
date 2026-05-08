@@ -24,6 +24,12 @@ const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
   final12: 1,
   final34: 1,
 }
+const createEmptyCompetitionState = () => ({
+  playoffMode: 16,
+  playoffStage: 'none',
+  playoffFinalRounds: { ...DEFAULT_PLAYOFF_FINAL_ROUNDS },
+  bracket: { ...EMPTY_BRACKET },
+})
 
 const DEFAULT_STATE = {
   tournamentName: 'Жаа атуу боюнча турнир',
@@ -31,10 +37,10 @@ const DEFAULT_STATE = {
   category: 'Классикалык жаа, 50 метр, эркектер',
   players: [],
   scores: {},
-  bracket: EMPTY_BRACKET,
-  playoffMode: 16,
-  playoffStage: 'none',
-  playoffFinalRounds: DEFAULT_PLAYOFF_FINAL_ROUNDS,
+  competitionDivisions: {
+    male: createEmptyCompetitionState(),
+    female: createEmptyCompetitionState(),
+  },
   playerNumberBook: {},
   scoreSubmission: DEFAULT_SCORE_SUBMISSION,
 }
@@ -49,7 +55,7 @@ const sections = [
 
 
 const seedOrders = {
-  32: [0, 31, 15, 16, 7, 24, 8, 23, 4, 27, 11, 20, 3, 28, 12, 19, 1, 30, 14, 17, 6, 25, 9, 22, 5, 26, 10, 21, 2, 29, 13, 18],
+  32: [0, 31, 15, 16, 7, 24, 8, 23, 4, 27, 11, 20, 3, 28, 12, 19, 2, 29, 13, 18, 5, 26, 10, 21, 6, 25, 9, 22, 1, 30, 14, 17],
   16: [0, 15, 7, 8, 4, 11, 3, 12, 2, 13, 5, 10, 6, 9, 1, 14],
   8: [0, 7, 3, 4, 1, 6, 2, 5],
   4: [0, 3, 1, 2],
@@ -114,7 +120,10 @@ const findPlayerByName = (players, name) =>
 
 const createEmptyState = () => ({
   ...DEFAULT_STATE,
-  bracket: { ...EMPTY_BRACKET },
+  competitionDivisions: {
+    male: createEmptyCompetitionState(),
+    female: createEmptyCompetitionState(),
+  },
 })
 
 const loadRegisteredPlayer = () => {
@@ -191,13 +200,43 @@ const parseTournamentState = (payload) => {
   }))
   const playerNumberBook = buildPlayerNumberBook(normalizedPlayers, parsed.playerNumberBook || {})
 
+  const normalizeCompetitionState = (value) => ({
+    playoffMode: [32, 16, 8, 4].includes(Number(value?.playoffMode)) ? Number(value.playoffMode) : 16,
+    playoffStage: ['none', 'roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final'].includes(value?.playoffStage)
+      ? value.playoffStage
+      : 'none',
+    playoffFinalRounds: normalizePlayoffFinalRounds(value?.playoffFinalRounds),
+    bracket: value?.bracket ? { ...EMPTY_BRACKET, ...value.bracket } : { ...EMPTY_BRACKET },
+  })
+  const normalizeCompetitionDivisions = (value, legacy = {}) => {
+    const defaults = {
+      male: createEmptyCompetitionState(),
+      female: createEmptyCompetitionState(),
+    }
+
+    if (value && typeof value === 'object') {
+      return {
+        male: normalizeCompetitionState(value.male),
+        female: normalizeCompetitionState(value.female),
+      }
+    }
+
+    const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+    defaults[legacyDivision] = normalizeCompetitionState({
+      playoffMode: legacy.playoffMode,
+      playoffStage: legacy.playoffStage,
+      playoffFinalRounds: legacy.playoffFinalRounds,
+      bracket: legacy.bracket,
+    })
+    return defaults
+  }
+
   return {
     ...DEFAULT_STATE,
     ...parsed,
     players: sortPlayersByEntryNumber(normalizedPlayers),
     playerNumberBook,
-    playoffFinalRounds: normalizePlayoffFinalRounds(parsed.playoffFinalRounds),
-    bracket: parsed.bracket ? { ...EMPTY_BRACKET, ...parsed.bracket } : { ...EMPTY_BRACKET },
+    competitionDivisions: normalizeCompetitionDivisions(parsed.competitionDivisions, parsed),
     scoreSubmission: {
       ...DEFAULT_SCORE_SUBMISSION,
       ...(parsed.scoreSubmission || {}),
@@ -333,47 +372,49 @@ function App() {
   }, [tournamentState.players, tournamentState.scores])
   const maleRatingPlayers = useMemo(() => ratingPlayers.filter((player) => player.gender === 'male'), [ratingPlayers])
   const femaleRatingPlayers = useMemo(() => ratingPlayers.filter((player) => player.gender === 'female'), [ratingPlayers])
-
-  const playoffMatches = useMemo(() => getAllMatches(tournamentState.bracket), [tournamentState.bracket])
-  const activeScoreRound = tournamentState.scoreSubmission?.activeRound || 1
-  const playoffStages = useMemo(() => {
-    const stageKeys = playoffStageKeysByMode[tournamentState.playoffMode] || playoffStageKeysByMode[8]
-    return stageKeys.map((stageKey) => ({
-      stageKey,
-      title: stageTitles[stageKey] || stageKey,
-      matches: tournamentState.bracket[stageKey] || [],
-    }))
-  }, [tournamentState.bracket, tournamentState.playoffMode])
-  const hasFinalMatches = Boolean(tournamentState.bracket.final12 || tournamentState.bracket.final34)
   const selectedPlayer = useMemo(
     () => tournamentState.players.find((player) => player.id === registeredPlayer?.playerId) || null,
     [registeredPlayer, tournamentState.players],
   )
+  const playerCompetitionDivision = selectedPlayer?.gender === 'female' ? 'female' : 'male'
+  const activeCompetitionState = tournamentState.competitionDivisions?.[playerCompetitionDivision] || createEmptyCompetitionState()
+
+  const playoffMatches = useMemo(() => getAllMatches(activeCompetitionState.bracket), [activeCompetitionState.bracket])
+  const activeScoreRound = tournamentState.scoreSubmission?.activeRound || 1
+  const playoffStages = useMemo(() => {
+    const stageKeys = playoffStageKeysByMode[activeCompetitionState.playoffMode] || playoffStageKeysByMode[8]
+    return stageKeys.map((stageKey) => ({
+      stageKey,
+      title: stageTitles[stageKey] || stageKey,
+      matches: activeCompetitionState.bracket[stageKey] || [],
+    }))
+  }, [activeCompetitionState.bracket, activeCompetitionState.playoffMode])
+  const hasFinalMatches = Boolean(activeCompetitionState.bracket.final12 || activeCompetitionState.bracket.final34)
   const playerPlayoffMatch = useMemo(
-    () => getPlayerPlayoffMatch(tournamentState.bracket, tournamentState.playoffStage, registeredPlayer?.playerId),
-    [registeredPlayer, tournamentState.bracket, tournamentState.playoffStage],
+    () => getPlayerPlayoffMatch(activeCompetitionState.bracket, activeCompetitionState.playoffStage, registeredPlayer?.playerId),
+    [registeredPlayer, activeCompetitionState.bracket, activeCompetitionState.playoffStage],
   )
   const isPlayerOneInPlayoffMatch = playerPlayoffMatch?.p1?.id === registeredPlayer?.playerId
   const playerPlayoffStageKey =
-    tournamentState.playoffStage === 'final'
+    activeCompetitionState.playoffStage === 'final'
       ? playerPlayoffMatch?.id === 'final34'
         ? 'final34'
         : playerPlayoffMatch?.id === 'final12'
           ? 'final12'
           : null
-      : tournamentState.playoffStage
+      : activeCompetitionState.playoffStage
   const openedPlayoffRound =
-    tournamentState.playoffStage === 'final' && playerPlayoffStageKey
-      ? tournamentState.playoffFinalRounds?.[playerPlayoffStageKey] || 1
+    activeCompetitionState.playoffStage === 'final' && playerPlayoffStageKey
+      ? activeCompetitionState.playoffFinalRounds?.[playerPlayoffStageKey] || 1
       : 1
   const currentPlayoffRound =
-    tournamentState.playoffStage === 'final' && playerPlayoffMatch
+    activeCompetitionState.playoffStage === 'final' && playerPlayoffMatch
       ? getCurrentPlayerFinalRound(playerPlayoffMatch, isPlayerOneInPlayoffMatch, openedPlayoffRound)
       : openedPlayoffRound
   const playoffOpponent = playerPlayoffMatch ? (isPlayerOneInPlayoffMatch ? playerPlayoffMatch.p2 : playerPlayoffMatch.p1) : null
   const isPlayoffShootOffActive = isStandardPlayoffShootOffActive(playerPlayoffMatch)
   const currentPlayoffScore = playerPlayoffMatch
-    ? tournamentState.playoffStage === 'final'
+    ? activeCompetitionState.playoffStage === 'final'
       ? (isPlayerOneInPlayoffMatch
           ? playerPlayoffMatch.roundsP1?.[currentPlayoffRound - 1]
           : playerPlayoffMatch.roundsP2?.[currentPlayoffRound - 1]) ?? ''
@@ -387,7 +428,7 @@ function App() {
     : ''
   const hasSubmittedPlayoffScore = Boolean(
     playerPlayoffMatch &&
-      (tournamentState.playoffStage === 'final'
+      (activeCompetitionState.playoffStage === 'final'
         ? isPlayerOneInPlayoffMatch
           ? playerPlayoffMatch.submittedRoundsP1?.[currentPlayoffRound - 1]
           : playerPlayoffMatch.submittedRoundsP2?.[currentPlayoffRound - 1]
@@ -401,7 +442,7 @@ function App() {
   )
   const currentRoundScore = selectedPlayer ? tournamentState.scores[selectedPlayer.id]?.[activeScoreRound] ?? '' : ''
   const hasSubmittedCurrentRound = currentRoundScore !== '' && currentRoundScore !== null && currentRoundScore !== undefined
-  const isJournalLocked = tournamentState.playoffStage !== 'none'
+  const isJournalLocked = activeCompetitionState.playoffStage !== 'none'
   const isRegistered = Boolean(selectedPlayer)
   const visibleSections = isRegistered
     ? sections.filter((section) => section.id !== 'register' && section.id !== 'login')
@@ -674,7 +715,9 @@ function App() {
           score: playoffScoreForm.score,
         }),
       )
-      const refreshedMatch = getPlayerPlayoffMatch(nextState.bracket, nextState.playoffStage, selectedPlayer.id)
+      const nextDivisionId = selectedPlayer.gender === 'female' ? 'female' : 'male'
+      const nextCompetitionState = nextState.competitionDivisions?.[nextDivisionId] || createEmptyCompetitionState()
+      const refreshedMatch = getPlayerPlayoffMatch(nextCompetitionState.bracket, nextCompetitionState.playoffStage, selectedPlayer.id)
       const replayRequired = isStandardPlayoffReplayRequired(refreshedMatch)
 
       setTournamentState(nextState)
@@ -749,7 +792,7 @@ function App() {
             </div>
             <div className="stat-chip">
               <span className="stat-chip__label">Топ</span>
-              <strong>{tournamentState.playoffMode}</strong>
+              <strong>{activeCompetitionState.playoffMode}</strong>
             </div>
             <div className="stat-chip">
               <span className="stat-chip__label">Жери</span>
@@ -947,9 +990,9 @@ function App() {
                   <h3 className="panel__title">Оюнчу упайын жөнөтүү</h3>
                   </div>
                 <div className="pill">
-                  {tournamentState.playoffStage === 'final'
+                  {activeCompetitionState.playoffStage === 'final'
                     ? `Финал A${currentPlayoffRound}`
-                    : stageTitles[tournamentState.playoffStage] || 'Тор'}
+                    : stageTitles[activeCompetitionState.playoffStage] || 'Тор'}
                 </div>
               </div>
 
@@ -987,7 +1030,7 @@ function App() {
 
                 <div className="note-card field--full">
                   {playerPlayoffMatch
-                    ? `Активдүү беттеш: ${playoffOpponent?.name || '—'}. ${tournamentState.playoffStage === 'final' ? `A${currentPlayoffRound} үчүн` : ''} сиздин азыркы мааниниз: ${currentPlayoffScore === '' ? 'жок' : currentPlayoffScore}.`
+                    ? `Активдүү беттеш: ${playoffOpponent?.name || '—'}. ${activeCompetitionState.playoffStage === 'final' ? `A${currentPlayoffRound} үчүн` : ''} сиздин азыркы мааниниз: ${currentPlayoffScore === '' ? 'жок' : currentPlayoffScore}.`
                     : 'Админ сизди активдүү плей-офф беттешке чыгарганда ошол жерден упай жаза аласыз.'}
                 </div>
 
@@ -1004,8 +1047,8 @@ function App() {
                 className="bracket-grid"
                 style={{
                   '--bracket-column-count': playoffStages.length + (hasFinalMatches ? 1 : 0),
-                  '--bracket-column-width': tournamentState.playoffMode === 32 ? '248px' : tournamentState.playoffMode === 16 ? '264px' : '280px',
-                  '--bracket-column-gap': tournamentState.playoffMode === 32 ? '34px' : tournamentState.playoffMode === 16 ? '40px' : '48px',
+                  '--bracket-column-width': activeCompetitionState.playoffMode === 32 ? '248px' : activeCompetitionState.playoffMode === 16 ? '264px' : '280px',
+                  '--bracket-column-gap': activeCompetitionState.playoffMode === 32 ? '34px' : activeCompetitionState.playoffMode === 16 ? '40px' : '48px',
                 }}
               >
                 {playoffStages.map((stage) => (
@@ -1013,7 +1056,7 @@ function App() {
                     key={stage.stageKey}
                     stageKey={stage.stageKey}
                     title={stage.title}
-                    playoffMode={tournamentState.playoffMode}
+                    playoffMode={activeCompetitionState.playoffMode}
                     matches={stage.matches}
                   />
                 ))}
@@ -1025,8 +1068,8 @@ function App() {
                       <h4>Финал</h4>
                     </div>
 
-                    {tournamentState.bracket.final12 && <ReadOnlyMatch match={tournamentState.bracket.final12} isFinal />}
-                    {tournamentState.bracket.final34 && <ReadOnlyMatch match={tournamentState.bracket.final34} isFinal />}
+                    {activeCompetitionState.bracket.final12 && <ReadOnlyMatch match={activeCompetitionState.bracket.final12} isFinal />}
+                    {activeCompetitionState.bracket.final34 && <ReadOnlyMatch match={activeCompetitionState.bracket.final34} isFinal />}
                   </div>
                 )}
               </div>
@@ -1293,3 +1336,4 @@ const RatingSection = ({ title, players, emptyLabel, prefix }) => (
 )
 
 export default App
+
