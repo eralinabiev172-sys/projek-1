@@ -648,6 +648,12 @@ const App = () => {
   const lastLocalMutationAtRef = useRef(0);
   const reportDate = new Date().toLocaleDateString('ru-RU');
 
+  const markLocalMutation = (durationMs = 15000) => {
+    const now = Date.now();
+    lastLocalMutationAtRef.current = now;
+    preserveLocalChangesUntilRef.current = now + durationMs;
+  };
+
   const applyTournamentState = (nextState) => {
     setTournamentName(nextState.tournamentName);
     setLocation(nextState.location);
@@ -814,6 +820,7 @@ const App = () => {
   const bracket = activeCompetitionState.bracket;
 
   const updateCompetitionState = (divisionId, updater) => {
+    markLocalMutation();
     setCompetitionDivisions((prev) => {
       const current = prev[divisionId] || createEmptyCompetitionState();
       const nextValue = typeof updater === 'function' ? updater(current) : { ...current, ...updater };
@@ -1476,19 +1483,6 @@ const App = () => {
           </div>
         </section>
 
-        <section className="role-strip">
-          <article className="role-card role-card--admin">
-            <p className="eyebrow">Роль</p>
-            <h3>Админ</h3>
-            <p>Бул жерден турнирди башкарып, оюнчуларды, журналды, рейтингди жана плей-оффту толук көзөмөлдөйсүз.</p>
-          </article>
-          <article className="role-card role-card--user">
-            <p className="eyebrow">Оюнчу</p>
-            <h3>Колдонуучу сайты</h3>
-            <p>Оюнчу үчүн жөнөкөй жол өзүнчө калды: катталуу, кирүү, өз упайын жөнөтүү, рейтинг жана өз плей-оффун көрүү.</p>
-          </article>
-        </section>
-
         {activeTab === 'players' && (
           <div className="layout-grid">
             <section className="panel">
@@ -1662,18 +1656,6 @@ const App = () => {
                   </div>
 
                   <div className="score-round-manager">
-                  <div className="mode-switch">
-                    {COMPETITION_DIVISIONS.map((division) => (
-                      <button
-                        key={division.id}
-                        type="button"
-                        className={`mode-switch__button ${viewDivision === division.id ? 'mode-switch__button--active' : ''}`}
-                        onClick={() => setViewDivision(division.id)}
-                      >
-                        {division.label}
-                      </button>
-                    ))}
-                  </div>
                   <div className="score-round-manager__summary">
                     <span className="pill">Ачык айлампа: {scoreSubmission.activeRound}</span>
                     <p className="score-round-manager__hint">
@@ -2043,19 +2025,6 @@ const App = () => {
               </div>
 
               <div className="mode-switch">
-                {COMPETITION_DIVISIONS.map((division) => (
-                  <button
-                    key={division.id}
-                    type="button"
-                    onClick={() => setViewDivision(division.id)}
-                    className={`mode-switch__button ${viewDivision === division.id ? 'mode-switch__button--active' : ''}`}
-                  >
-                    {division.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mode-switch">
                 {[32, 16, 8].map((mode) => (
                   <button
                     key={mode}
@@ -2118,18 +2087,6 @@ const App = () => {
                 <p className="eyebrow">Финалдык тор</p>
                 <h3 className="panel__title">Беттеш тору: {COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label}</h3>
                 <p className="panel__subtitle">Эки бөлүм өз-өзүнчө этап менен жүрөт. Бул жерде азыр тандалган бөлүмдүн гана тору ачылат.</p>
-              </div>
-              <div className="mode-switch">
-                {COMPETITION_DIVISIONS.map((division) => (
-                  <button
-                    key={division.id}
-                    type="button"
-                    onClick={() => setViewDivision(division.id)}
-                    className={`mode-switch__button ${viewDivision === division.id ? 'mode-switch__button--active' : ''}`}
-                  >
-                    {division.label}
-                  </button>
-                ))}
               </div>
             </div>
 

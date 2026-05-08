@@ -18,6 +18,10 @@
       "dest": "/api/player-score.js"
     },
     {
+      "src": "/api/playoff-player-score",
+      "dest": "/api/playoff-player-score.js"
+    },
+    {
       "handle": "filesystem"
     },
     {

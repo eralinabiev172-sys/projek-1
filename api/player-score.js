@@ -2,9 +2,6 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY
-const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
-const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
-const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
 const MAX_PLAYER_SCORE = 30
 
 const EMPTY_BRACKET = {
@@ -17,14 +14,99 @@ const EMPTY_BRACKET = {
   winners: [],
 }
 
+const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
+  final12: 1,
+  final34: 1,
+}
+
+const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
+const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
+const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
+const COMPETITION_DIVISIONS_META_KEY = '__competitionDivisions'
+
+function createEmptyBracket() {
+  return {
+    roundOf32: [],
+    roundOf16: [],
+    quarterFinals: [],
+    semiFinals: [],
+    final12: null,
+    final34: null,
+    winners: [],
+  }
+}
+
+function createEmptyCompetitionState() {
+  return {
+    playoffMode: 16,
+    playoffStage: 'none',
+    playoffFinalRounds: { ...DEFAULT_PLAYOFF_FINAL_ROUNDS },
+    bracket: createEmptyBracket(),
+  }
+}
+
+function createDefaultCompetitionDivisions() {
+  return {
+    male: createEmptyCompetitionState(),
+    female: createEmptyCompetitionState(),
+  }
+}
+
 const normalizeScoreSubmission = (value) => ({
   activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
   entries: Array.isArray(value?.entries) ? value.entries : [],
 })
+
 const normalizePlayoffFinalRounds = (value) => ({
   final12: [1, 2, 3, 4, 5, 6].includes(Number(value?.final12)) ? Number(value.final12) : 1,
   final34: [1, 2, 3, 4, 5, 6].includes(Number(value?.final34)) ? Number(value.final34) : 1,
 })
+
+const normalizePlayoffDivision = (value) => (['all', 'male', 'female'].includes(value) ? value : 'all')
+
+const normalizeCompetitionState = (value) => ({
+  playoffMode: [32, 16, 8, 4].includes(Number(value?.playoffMode)) ? Number(value.playoffMode) : 16,
+  playoffStage: ['none', 'roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final'].includes(value?.playoffStage)
+    ? value.playoffStage
+    : 'none',
+  playoffFinalRounds: normalizePlayoffFinalRounds(value?.playoffFinalRounds),
+  bracket: value?.bracket ? { ...EMPTY_BRACKET, ...value.bracket } : createEmptyBracket(),
+})
+
+const hasBracketData = (bracket) =>
+  Boolean(
+    bracket &&
+      (bracket.final12 ||
+        bracket.final34 ||
+        bracket.winners?.length ||
+        bracket.roundOf32?.length ||
+        bracket.roundOf16?.length ||
+        bracket.quarterFinals?.length ||
+        bracket.semiFinals?.length),
+  )
+
+const normalizeCompetitionDivisions = (value, legacy = {}) => {
+  const defaults = createDefaultCompetitionDivisions()
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return {
+      male: normalizeCompetitionState(value.male),
+      female: normalizeCompetitionState(value.female),
+    }
+  }
+
+  const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+  if (hasBracketData(legacy.bracket) || legacy.playoffStage !== 'none') {
+    defaults[legacyDivision] = normalizeCompetitionState({
+      playoffMode: legacy.playoffMode,
+      playoffStage: legacy.playoffStage,
+      playoffFinalRounds: legacy.playoffFinalRounds,
+      bracket: legacy.bracket,
+    })
+  }
+
+  return defaults
+}
 
 const extractPlayerNumberBook = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -35,41 +117,78 @@ const extractPlayerNumberBook = (value) => {
   delete nextBook[SCORE_SUBMISSION_META_KEY]
   delete nextBook[PLAYOFF_DIVISION_META_KEY]
   delete nextBook[PLAYOFF_FINAL_ROUNDS_META_KEY]
+  delete nextBook[COMPETITION_DIVISIONS_META_KEY]
   return nextBook
 }
 
 const readStoredScoreSubmission = (dbRow) =>
   normalizeScoreSubmission(dbRow.score_submission || dbRow.player_number_book?.[SCORE_SUBMISSION_META_KEY])
 
-const readStoredPlayoffDivision = (dbRow) => {
-  const value = dbRow.player_number_book?.[PLAYOFF_DIVISION_META_KEY]
-  return ['all', 'male', 'female'].includes(value) ? value : 'all'
-}
-const readStoredPlayoffFinalRounds = (dbRow) => normalizePlayoffFinalRounds(dbRow.player_number_book?.[PLAYOFF_FINAL_ROUNDS_META_KEY])
+const readStoredPlayoffDivision = (dbRow) => normalizePlayoffDivision(dbRow.player_number_book?.[PLAYOFF_DIVISION_META_KEY])
 
-const writeStoredPlayerNumberBook = (playerNumberBook, scoreSubmission, playoffDivision, playoffFinalRounds) => ({
+const readStoredPlayoffFinalRounds = (dbRow) =>
+  normalizePlayoffFinalRounds(dbRow.player_number_book?.[PLAYOFF_FINAL_ROUNDS_META_KEY])
+
+const readStoredCompetitionDivisions = (dbRow) =>
+  normalizeCompetitionDivisions(dbRow.player_number_book?.[COMPETITION_DIVISIONS_META_KEY], {
+    playoffDivision: readStoredPlayoffDivision(dbRow),
+    bracket: dbRow.bracket,
+    playoffStage: dbRow.playoff_stage,
+    playoffMode: dbRow.playoff_mode,
+    playoffFinalRounds: readStoredPlayoffFinalRounds(dbRow),
+  })
+
+const writeStoredPlayerNumberBook = (
+  playerNumberBook,
+  scoreSubmission,
+  playoffDivision,
+  playoffFinalRounds,
+  competitionDivisions,
+) => ({
   ...(playerNumberBook || {}),
   [SCORE_SUBMISSION_META_KEY]: normalizeScoreSubmission(scoreSubmission),
-  [PLAYOFF_DIVISION_META_KEY]: ['all', 'male', 'female'].includes(playoffDivision) ? playoffDivision : 'all',
+  [PLAYOFF_DIVISION_META_KEY]: normalizePlayoffDivision(playoffDivision),
   [PLAYOFF_FINAL_ROUNDS_META_KEY]: normalizePlayoffFinalRounds(playoffFinalRounds),
+  [COMPETITION_DIVISIONS_META_KEY]: normalizeCompetitionDivisions(competitionDivisions),
 })
 
-const dbToJs = (dbRow) => ({
-  tournamentName: dbRow.tournament_name,
-  location: dbRow.location,
-  category: dbRow.category,
-  playoffDivision: readStoredPlayoffDivision(dbRow),
-  playoffFinalRounds: readStoredPlayoffFinalRounds(dbRow),
-  headReferee: dbRow.head_referee,
-  headSecretary: dbRow.head_secretary,
-  players: dbRow.players || [],
-  scores: dbRow.scores || {},
-  bracket: dbRow.bracket || EMPTY_BRACKET,
-  playoffStage: dbRow.playoff_stage,
-  playoffMode: dbRow.playoff_mode,
-  playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
-  scoreSubmission: readStoredScoreSubmission(dbRow),
-})
+const dbToJs = (dbRow) => {
+  const playoffDivision = readStoredPlayoffDivision(dbRow)
+  const competitionDivisions = readStoredCompetitionDivisions(dbRow)
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
+
+  return {
+    playoffDivision,
+    playoffFinalRounds: legacyDivisionState.playoffFinalRounds,
+    players: dbRow.players || [],
+    scores: dbRow.scores || {},
+    bracket: legacyDivisionState.bracket,
+    playoffStage: legacyDivisionState.playoffStage,
+    playoffMode: legacyDivisionState.playoffMode,
+    competitionDivisions,
+    playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
+    scoreSubmission: readStoredScoreSubmission(dbRow),
+  }
+}
+
+const jsToDb = (jsState) => {
+  const playoffDivision = normalizePlayoffDivision(jsState.playoffDivision)
+  const competitionDivisions = normalizeCompetitionDivisions(jsState.competitionDivisions, jsState)
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
+
+  return {
+    scores: jsState.scores,
+    player_number_book: writeStoredPlayerNumberBook(
+      jsState.playerNumberBook,
+      jsState.scoreSubmission,
+      playoffDivision,
+      legacyDivisionState.playoffFinalRounds,
+      competitionDivisions,
+    ),
+  }
+}
 
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
@@ -102,15 +221,15 @@ export default async function handler(req, res) {
     const score = Number.parseInt(rawScore, 10)
 
     if (!playerId) {
-      return res.status(400).json({ error: 'Оюнчу тандалган жок.' })
+      return res.status(400).json({ error: 'РћСЋРЅС‡Сѓ С‚Р°РЅРґР°Р»РіР°РЅ Р¶РѕРє.' })
     }
 
     if (!phone || !isValidPhone(phone)) {
-      return res.status(400).json({ error: 'Телефон номери туура эмес.' })
+      return res.status(400).json({ error: 'РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё С‚СѓСѓСЂР° СЌРјРµСЃ.' })
     }
 
     if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
-      return res.status(400).json({ error: `Упай 0дөн ${MAX_PLAYER_SCORE}га чейинки сан болушу керек.` })
+      return res.status(400).json({ error: `РЈРїР°Р№ 0РґУ©РЅ ${MAX_PLAYER_SCORE}РіР° С‡РµР№РёРЅРєРё СЃР°РЅ Р±РѕР»СѓС€Сѓ РєРµСЂРµРє.` })
     }
 
     const { data: currentData, error: fetchError } = await supabase
@@ -123,57 +242,58 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: fetchError.message })
     }
 
-    const scoreSubmission = readStoredScoreSubmission(currentData)
-    const activeRound = scoreSubmission.activeRound
     const currentState = dbToJs(currentData)
+    const scoreSubmission = currentState.scoreSubmission
+    const activeRound = scoreSubmission.activeRound
     const player = currentState.players.find((item) => item.id === playerId)
 
     if (!player) {
-      return res.status(400).json({ error: 'Оюнчу табылган жок.' })
+      return res.status(400).json({ error: 'РћСЋРЅС‡Сѓ С‚Р°Р±С‹Р»РіР°РЅ Р¶РѕРє.' })
     }
 
     if (sanitizePhone(player.phone) !== phone) {
-      return res.status(400).json({ error: 'Телефон номери дал келген жок.' })
+      return res.status(400).json({ error: 'РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё РґР°Р» РєРµР»РіРµРЅ Р¶РѕРє.' })
+    }
+
+    const divisionId = player.gender === 'female' ? 'female' : 'male'
+    const divisionState = currentState.competitionDivisions?.[divisionId] || createEmptyCompetitionState()
+    if (divisionState.playoffStage !== 'none') {
+      return res.status(409).json({ error: 'После нажатия "Торду түзүү" журнал закрыт. Теперь очки можно писать только в плей-офф.' })
     }
 
     const existingRoundScore = currentState.scores?.[player.id]?.[activeRound]
     if (existingRoundScore !== undefined && existingRoundScore !== null && existingRoundScore !== '') {
-      return res.status(409).json({ error: 'Бул айлампа үчүн упай мурунтан эле сакталган. Аны эми калыс гана өзгөртө алат.' })
+      return res.status(409).json({ error: 'Р‘СѓР» Р°Р№Р»Р°РјРїР° ТЇС‡ТЇРЅ СѓРїР°Р№ РјСѓСЂСѓРЅС‚Р°РЅ СЌР»Рµ СЃР°РєС‚Р°Р»РіР°РЅ. РђРЅС‹ СЌРјРё РєР°Р»С‹СЃ РіР°РЅР° У©Р·РіУ©СЂС‚У© Р°Р»Р°С‚.' })
     }
 
-    const updatedScores = {
-      ...currentState.scores,
-      [player.id]: {
-        ...(currentState.scores[player.id] || {}),
-        [activeRound]: score,
+    const nextState = {
+      ...currentState,
+      scores: {
+        ...currentState.scores,
+        [player.id]: {
+          ...(currentState.scores[player.id] || {}),
+          [activeRound]: score,
+        },
       },
-    }
-
-    const nextEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      playerId: player.id,
-      playerName: player.name,
-      round: activeRound,
-      score,
-      submittedAt: new Date().toISOString(),
-    }
-
-    const updatedScoreSubmission = {
-      ...scoreSubmission,
-      entries: [nextEntry, ...scoreSubmission.entries].slice(0, 500),
+      scoreSubmission: {
+        ...scoreSubmission,
+        entries: [
+          {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            playerId: player.id,
+            playerName: player.name,
+            round: activeRound,
+            score,
+            submittedAt: new Date().toISOString(),
+          },
+          ...scoreSubmission.entries,
+        ].slice(0, 500),
+      },
     }
 
     const { data: updatedData, error: updateError } = await supabase
       .from('tournament_state')
-      .update({
-        scores: updatedScores,
-        player_number_book: writeStoredPlayerNumberBook(
-          currentState.playerNumberBook,
-          updatedScoreSubmission,
-          currentState.playoffDivision,
-          currentState.playoffFinalRounds,
-        ),
-      })
+      .update(jsToDb(nextState))
       .eq('id', 'main')
       .select('*')
       .single()

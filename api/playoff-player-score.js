@@ -2,9 +2,6 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY
-const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
-const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
-const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
 const MAX_PLAYER_SCORE = 30
 
 const EMPTY_BRACKET = {
@@ -17,16 +14,100 @@ const EMPTY_BRACKET = {
   winners: [],
 }
 
+const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
+  final12: 1,
+  final34: 1,
+}
+
+const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
+const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
+const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
+const COMPETITION_DIVISIONS_META_KEY = '__competitionDivisions'
 const PLAYOFF_SUBMISSION_STAGES = ['roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final']
+
+function createEmptyBracket() {
+  return {
+    roundOf32: [],
+    roundOf16: [],
+    quarterFinals: [],
+    semiFinals: [],
+    final12: null,
+    final34: null,
+    winners: [],
+  }
+}
+
+function createEmptyCompetitionState() {
+  return {
+    playoffMode: 16,
+    playoffStage: 'none',
+    playoffFinalRounds: { ...DEFAULT_PLAYOFF_FINAL_ROUNDS },
+    bracket: createEmptyBracket(),
+  }
+}
+
+function createDefaultCompetitionDivisions() {
+  return {
+    male: createEmptyCompetitionState(),
+    female: createEmptyCompetitionState(),
+  }
+}
 
 const normalizeScoreSubmission = (value) => ({
   activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
   entries: Array.isArray(value?.entries) ? value.entries : [],
 })
+
 const normalizePlayoffFinalRounds = (value) => ({
   final12: [1, 2, 3, 4, 5, 6].includes(Number(value?.final12)) ? Number(value.final12) : 1,
   final34: [1, 2, 3, 4, 5, 6].includes(Number(value?.final34)) ? Number(value.final34) : 1,
 })
+
+const normalizePlayoffDivision = (value) => (['all', 'male', 'female'].includes(value) ? value : 'all')
+
+const normalizeCompetitionState = (value) => ({
+  playoffMode: [32, 16, 8, 4].includes(Number(value?.playoffMode)) ? Number(value.playoffMode) : 16,
+  playoffStage: ['none', 'roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final'].includes(value?.playoffStage)
+    ? value.playoffStage
+    : 'none',
+  playoffFinalRounds: normalizePlayoffFinalRounds(value?.playoffFinalRounds),
+  bracket: value?.bracket ? { ...EMPTY_BRACKET, ...value.bracket } : createEmptyBracket(),
+})
+
+const hasBracketData = (bracket) =>
+  Boolean(
+    bracket &&
+      (bracket.final12 ||
+        bracket.final34 ||
+        bracket.winners?.length ||
+        bracket.roundOf32?.length ||
+        bracket.roundOf16?.length ||
+        bracket.quarterFinals?.length ||
+        bracket.semiFinals?.length),
+  )
+
+const normalizeCompetitionDivisions = (value, legacy = {}) => {
+  const defaults = createDefaultCompetitionDivisions()
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return {
+      male: normalizeCompetitionState(value.male),
+      female: normalizeCompetitionState(value.female),
+    }
+  }
+
+  const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+  if (hasBracketData(legacy.bracket) || legacy.playoffStage !== 'none') {
+    defaults[legacyDivision] = normalizeCompetitionState({
+      playoffMode: legacy.playoffMode,
+      playoffStage: legacy.playoffStage,
+      playoffFinalRounds: legacy.playoffFinalRounds,
+      bracket: legacy.bracket,
+    })
+  }
+
+  return defaults
+}
 
 const extractPlayerNumberBook = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -37,41 +118,80 @@ const extractPlayerNumberBook = (value) => {
   delete nextBook[SCORE_SUBMISSION_META_KEY]
   delete nextBook[PLAYOFF_DIVISION_META_KEY]
   delete nextBook[PLAYOFF_FINAL_ROUNDS_META_KEY]
+  delete nextBook[COMPETITION_DIVISIONS_META_KEY]
   return nextBook
 }
 
 const readStoredScoreSubmission = (dbRow) =>
   normalizeScoreSubmission(dbRow.score_submission || dbRow.player_number_book?.[SCORE_SUBMISSION_META_KEY])
 
-const readStoredPlayoffDivision = (dbRow) => {
-  const value = dbRow.player_number_book?.[PLAYOFF_DIVISION_META_KEY]
-  return ['all', 'male', 'female'].includes(value) ? value : 'all'
-}
-const readStoredPlayoffFinalRounds = (dbRow) => normalizePlayoffFinalRounds(dbRow.player_number_book?.[PLAYOFF_FINAL_ROUNDS_META_KEY])
+const readStoredPlayoffDivision = (dbRow) => normalizePlayoffDivision(dbRow.player_number_book?.[PLAYOFF_DIVISION_META_KEY])
 
-const writeStoredPlayerNumberBook = (playerNumberBook, scoreSubmission, playoffDivision, playoffFinalRounds) => ({
+const readStoredPlayoffFinalRounds = (dbRow) =>
+  normalizePlayoffFinalRounds(dbRow.player_number_book?.[PLAYOFF_FINAL_ROUNDS_META_KEY])
+
+const readStoredCompetitionDivisions = (dbRow) =>
+  normalizeCompetitionDivisions(dbRow.player_number_book?.[COMPETITION_DIVISIONS_META_KEY], {
+    playoffDivision: readStoredPlayoffDivision(dbRow),
+    bracket: dbRow.bracket,
+    playoffStage: dbRow.playoff_stage,
+    playoffMode: dbRow.playoff_mode,
+    playoffFinalRounds: readStoredPlayoffFinalRounds(dbRow),
+  })
+
+const writeStoredPlayerNumberBook = (
+  playerNumberBook,
+  scoreSubmission,
+  playoffDivision,
+  playoffFinalRounds,
+  competitionDivisions,
+) => ({
   ...(playerNumberBook || {}),
   [SCORE_SUBMISSION_META_KEY]: normalizeScoreSubmission(scoreSubmission),
-  [PLAYOFF_DIVISION_META_KEY]: ['all', 'male', 'female'].includes(playoffDivision) ? playoffDivision : 'all',
+  [PLAYOFF_DIVISION_META_KEY]: normalizePlayoffDivision(playoffDivision),
   [PLAYOFF_FINAL_ROUNDS_META_KEY]: normalizePlayoffFinalRounds(playoffFinalRounds),
+  [COMPETITION_DIVISIONS_META_KEY]: normalizeCompetitionDivisions(competitionDivisions),
 })
 
-const dbToJs = (dbRow) => ({
-  tournamentName: dbRow.tournament_name,
-  location: dbRow.location,
-  category: dbRow.category,
-  playoffDivision: readStoredPlayoffDivision(dbRow),
-  playoffFinalRounds: readStoredPlayoffFinalRounds(dbRow),
-  headReferee: dbRow.head_referee,
-  headSecretary: dbRow.head_secretary,
-  players: dbRow.players || [],
-  scores: dbRow.scores || {},
-  bracket: dbRow.bracket || EMPTY_BRACKET,
-  playoffStage: dbRow.playoff_stage,
-  playoffMode: dbRow.playoff_mode,
-  playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
-  scoreSubmission: readStoredScoreSubmission(dbRow),
-})
+const dbToJs = (dbRow) => {
+  const playoffDivision = readStoredPlayoffDivision(dbRow)
+  const competitionDivisions = readStoredCompetitionDivisions(dbRow)
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
+
+  return {
+    playoffDivision,
+    playoffFinalRounds: legacyDivisionState.playoffFinalRounds,
+    players: dbRow.players || [],
+    scores: dbRow.scores || {},
+    bracket: legacyDivisionState.bracket,
+    playoffStage: legacyDivisionState.playoffStage,
+    playoffMode: legacyDivisionState.playoffMode,
+    competitionDivisions,
+    playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
+    scoreSubmission: readStoredScoreSubmission(dbRow),
+  }
+}
+
+const jsToDb = (jsState) => {
+  const playoffDivision = normalizePlayoffDivision(jsState.playoffDivision)
+  const competitionDivisions = normalizeCompetitionDivisions(jsState.competitionDivisions, jsState)
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
+
+  return {
+    bracket: legacyDivisionState.bracket,
+    playoff_stage: legacyDivisionState.playoffStage,
+    playoff_mode: legacyDivisionState.playoffMode,
+    player_number_book: writeStoredPlayerNumberBook(
+      jsState.playerNumberBook,
+      jsState.scoreSubmission,
+      playoffDivision,
+      legacyDivisionState.playoffFinalRounds,
+      competitionDivisions,
+    ),
+  }
+}
 
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
@@ -105,6 +225,7 @@ const resolvePlayoffWinner = (match) => {
   if (Number(match.s2_bot) > Number(match.s1_bot)) return match.p2
   return null
 }
+
 const shouldUseShootOffForStandardMatch = (match) =>
   Boolean(
     match &&
@@ -139,15 +260,15 @@ export default async function handler(req, res) {
     const score = Number.parseInt(rawScore, 10)
 
     if (!playerId) {
-      return res.status(400).json({ error: 'РћСЋРЅС‡Сѓ С‚Р°РЅРґР°Р»РіР°РЅ Р¶РѕРє.' })
+      return res.status(400).json({ error: 'Р С›РЎР‹Р Р…РЎвЂЎРЎС“ РЎвЂљР В°Р Р…Р Т‘Р В°Р В»Р С–Р В°Р Р… Р В¶Р С•Р С”.' })
     }
 
     if (!phone || !isValidPhone(phone)) {
-      return res.status(400).json({ error: 'РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё С‚СѓСѓСЂР° СЌРјРµСЃ.' })
+      return res.status(400).json({ error: 'Р СћР ВµР В»Р ВµРЎвЂћР С•Р Р… Р Р…Р С•Р СР ВµРЎР‚Р С‘ РЎвЂљРЎС“РЎС“РЎР‚Р В° РЎРЊР СР ВµРЎРѓ.' })
     }
 
     if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
-      return res.status(400).json({ error: `РЈРїР°Р№ 0РґУ©РЅ ${MAX_PLAYER_SCORE}РіР° С‡РµР№РёРЅРєРё СЃР°РЅ Р±РѕР»СѓС€Сѓ РєРµСЂРµРє.` })
+      return res.status(400).json({ error: `Р Р€Р С—Р В°Р в„– 0Р Т‘РЈВ©Р Р… ${MAX_PLAYER_SCORE}Р С–Р В° РЎвЂЎР ВµР в„–Р С‘Р Р…Р С”Р С‘ РЎРѓР В°Р Р… Р В±Р С•Р В»РЎС“РЎв‚¬РЎС“ Р С”Р ВµРЎР‚Р ВµР С”.` })
     }
 
     const { data: currentData, error: fetchError } = await supabase
@@ -164,16 +285,19 @@ export default async function handler(req, res) {
     const player = currentState.players.find((item) => item.id === playerId)
 
     if (!player) {
-      return res.status(400).json({ error: 'РћСЋРЅС‡Сѓ С‚Р°Р±С‹Р»РіР°РЅ Р¶РѕРє.' })
+      return res.status(400).json({ error: 'Р С›РЎР‹Р Р…РЎвЂЎРЎС“ РЎвЂљР В°Р В±РЎвЂ№Р В»Р С–Р В°Р Р… Р В¶Р С•Р С”.' })
     }
 
     if (sanitizePhone(player.phone) !== phone) {
-      return res.status(400).json({ error: 'РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё РґР°Р» РєРµР»РіРµРЅ Р¶РѕРє.' })
+      return res.status(400).json({ error: 'Р СћР ВµР В»Р ВµРЎвЂћР С•Р Р… Р Р…Р С•Р СР ВµРЎР‚Р С‘ Р Т‘Р В°Р В» Р С”Р ВµР В»Р С–Р ВµР Р… Р В¶Р С•Р С”.' })
     }
 
-    const activeMatch = findActivePlayoffMatch(currentState.bracket, currentState.playoffStage, playerId)
+    const divisionId = player.gender === 'female' ? 'female' : 'male'
+    const divisionState = normalizeCompetitionState(currentState.competitionDivisions?.[divisionId])
+    const activeMatch = findActivePlayoffMatch(divisionState.bracket, divisionState.playoffStage, playerId)
+
     if (!activeMatch) {
-      return res.status(400).json({ error: 'Сиз үчүн ачык плей-офф беттеш табылган жок.' })
+      return res.status(400).json({ error: 'РЎРёР· ТЇС‡ТЇРЅ Р°С‡С‹Рє РїР»РµР№-РѕС„С„ Р±РµС‚С‚РµС€ С‚Р°Р±С‹Р»РіР°РЅ Р¶РѕРє.' })
     }
 
     const isPlayerOne = activeMatch?.p1?.id === playerId
@@ -189,19 +313,18 @@ export default async function handler(req, res) {
       submittedShootOffP2: Boolean(activeMatch.submittedShootOffP2),
     }
 
-    if (currentState.playoffStage === 'final') {
+    if (divisionState.playoffStage === 'final') {
       const finalStageKey = activeMatch.id === 'final34' ? 'final34' : 'final12'
-      const activeRound = currentState.playoffFinalRounds?.[finalStageKey] || 1
+      const activeRound = divisionState.playoffFinalRounds?.[finalStageKey] || 1
       const submittedRoundsKey = isPlayerOne ? 'submittedRoundsP1' : 'submittedRoundsP2'
       const roundsKey = isPlayerOne ? 'roundsP1' : 'roundsP2'
 
       if (updatedMatch[submittedRoundsKey][activeRound - 1]) {
-        return res.status(409).json({ error: 'Бул финал айлампасы үчүн упай мурунтан эле жөнөтүлгөн.' })
+        return res.status(409).json({ error: 'Р‘СѓР» С„РёРЅР°Р» Р°Р№Р»Р°РјРїР°СЃС‹ ТЇС‡ТЇРЅ СѓРїР°Р№ РјСѓСЂСѓРЅС‚Р°РЅ СЌР»Рµ Р¶У©РЅУ©С‚ТЇР»РіУ©РЅ.' })
       }
 
       updatedMatch[roundsKey][activeRound - 1] = score
       updatedMatch[submittedRoundsKey][activeRound - 1] = true
-
       updatedMatch.s1 = updatedMatch.roundsP1.slice(0, 6).reduce((sum, item) => sum + Number(item || 0), 0)
       updatedMatch.s2 = updatedMatch.roundsP2.slice(0, 6).reduce((sum, item) => sum + Number(item || 0), 0)
 
@@ -232,8 +355,9 @@ export default async function handler(req, res) {
       const submissionKey = useShootOff
         ? isPlayerOne ? 'submittedShootOffP1' : 'submittedShootOffP2'
         : isPlayerOne ? 'submittedP1' : 'submittedP2'
+
       if (updatedMatch[submissionKey]) {
-        return res.status(409).json({ error: 'Бул плей-офф беттеш үчүн упай мурунтан эле жөнөтүлгөн.' })
+        return res.status(409).json({ error: 'Р‘СѓР» РїР»РµР№-РѕС„С„ Р±РµС‚С‚РµС€ ТЇС‡ТЇРЅ СѓРїР°Р№ РјСѓСЂСѓРЅС‚Р°РЅ СЌР»Рµ Р¶У©РЅУ©С‚ТЇР»РіУ©РЅ.' })
       }
 
       if (useShootOff) {
@@ -241,35 +365,40 @@ export default async function handler(req, res) {
       } else {
         updatedMatch[isPlayerOne ? 's1' : 's2'] = score
       }
+
       updatedMatch[submissionKey] = true
     }
 
     updatedMatch.winner = resolvePlayoffWinner(updatedMatch)
 
-    const updatedBracket = { ...currentState.bracket }
-    if (currentState.playoffStage === 'final') {
-      if (updatedBracket.final12?.id === updatedMatch.id) {
-        updatedBracket.final12 = updatedMatch
-      } else if (updatedBracket.final34?.id === updatedMatch.id) {
-        updatedBracket.final34 = updatedMatch
+    const updatedDivisionState = {
+      ...divisionState,
+      bracket: { ...divisionState.bracket },
+    }
+
+    if (divisionState.playoffStage === 'final') {
+      if (updatedDivisionState.bracket.final12?.id === updatedMatch.id) {
+        updatedDivisionState.bracket.final12 = updatedMatch
+      } else if (updatedDivisionState.bracket.final34?.id === updatedMatch.id) {
+        updatedDivisionState.bracket.final34 = updatedMatch
       }
     } else {
-      updatedBracket[currentState.playoffStage] = (updatedBracket[currentState.playoffStage] || []).map((match) =>
+      updatedDivisionState.bracket[divisionState.playoffStage] = (updatedDivisionState.bracket[divisionState.playoffStage] || []).map((match) =>
         match.id === updatedMatch.id ? updatedMatch : match,
       )
     }
 
+    const nextState = {
+      ...currentState,
+      competitionDivisions: {
+        ...currentState.competitionDivisions,
+        [divisionId]: updatedDivisionState,
+      },
+    }
+
     const { data: updatedData, error: updateError } = await supabase
       .from('tournament_state')
-      .update({
-        bracket: updatedBracket,
-        player_number_book: writeStoredPlayerNumberBook(
-          currentState.playerNumberBook,
-          currentState.scoreSubmission,
-          currentState.playoffDivision,
-          currentState.playoffFinalRounds,
-        ),
-      })
+      .update(jsToDb(nextState))
       .eq('id', 'main')
       .select('*')
       .single()
