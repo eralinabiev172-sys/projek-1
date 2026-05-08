@@ -91,11 +91,11 @@ const playoffStageKeysByMode = {
 };
 
 const tabs = [
-  { id: 'players', label: 'Катышуучулар' },
-  { id: 'playerData', label: 'Оюнчу тизмеси' },
-  { id: 'journal', label: 'Тандоо элек' },
-  { id: 'rating', label: 'Даража' },
-  { id: 'playoff', label: 'Жеке элек' },
+  { id: 'players', label: 'Жөндөөлөр' },
+  { id: 'playerData', label: 'Оюнчулар' },
+  { id: 'journal', label: 'Журнал' },
+  { id: 'rating', label: 'Рейтинг' },
+  { id: 'playoff', label: 'Плей-офф' },
   { id: 'report', label: 'Отчёт' },
 ];
 
@@ -852,6 +852,8 @@ const App = () => {
   };
 
   const orderedPlayers = sortPlayersByEntryNumber(players);
+  const malePlayers = orderedPlayers.filter((player) => player.gender === 'male');
+  const femalePlayers = orderedPlayers.filter((player) => player.gender === 'female');
   const filteredOrderedPlayers = orderedPlayers.filter((player) => player.gender === viewDivision);
   const rankedPlayers = [...players].sort((a, b) => calculateTotal(b.id) - calculateTotal(a.id));
   const filteredRankedPlayers = rankedPlayers.filter((player) => player.gender === viewDivision);
@@ -899,6 +901,22 @@ const App = () => {
   });
   const malePlayersCount = filteredPlayerData.filter((player) => player.gender === 'male').length;
   const femalePlayersCount = filteredPlayerData.filter((player) => player.gender === 'female').length;
+  const divisionOverview = COMPETITION_DIVISIONS.map((division) => {
+    const divisionPlayers = orderedPlayers.filter((player) => player.gender === division.id);
+    const divisionRanked = rankedPlayers.filter((player) => player.gender === division.id);
+    const divisionState = competitionDivisions[division.id] || createEmptyCompetitionState();
+
+    return {
+      ...division,
+      playersCount: divisionPlayers.length,
+      playoffCount: Math.min(divisionRanked.length, divisionState.playoffMode),
+      stageLabel: stageMeta[divisionState.playoffStage]?.label || 'Квалификация',
+      stageShort: stageMeta[divisionState.playoffStage]?.short || 'Журнал',
+      topLabel: divisionRanked[0]?.name || 'Азырынча жок',
+      isActive: viewDivision === division.id,
+    };
+  });
+  const activeDivisionLabel = COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Эркек';
   const playoffStages = visibleStageKeys.map((stageKey) => ({
     stageKey,
     title: playoffStageTitles[stageKey] || stageMeta[stageKey].label,
@@ -1427,10 +1445,10 @@ const App = () => {
 
         <section className="hero-card">
           <div>
-            <p className="eyebrow">Мобилдик версияга ылайыкталган</p>
+            <p className="eyebrow">Админ режими</p>
             <h2 className="hero-card__title">{tournamentName}</h2>
             <p className="hero-card__text">
-              Квалификацияны, торду жана акыркы отчетту бир колдонмодо жүргүзүңүз.
+              Админ үчүн негизги жол: оюнчуларды кошуу, журналды жүргүзүү, рейтингди көзөмөлдөө, анан эркек жана аял бөлүмдөрү үчүн өз-өзүнчө плей-офф ачуу.
             </p>
           </div>
 
@@ -1440,14 +1458,35 @@ const App = () => {
               <strong>{players.length}</strong>
             </div>
             <div className="stat-chip">
-              <span className="stat-chip__label">Бөлүм</span>
-              <strong>{COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Эркек'}</strong>
+              <span className="stat-chip__label">Эркек</span>
+              <strong>{malePlayers.length}</strong>
             </div>
             <div className="stat-chip">
-              <span className="stat-chip__label">Этап</span>
-              <strong>{stageMeta[playoffStage]?.short || '—'}</strong>
+              <span className="stat-chip__label">Аял</span>
+              <strong>{femalePlayers.length}</strong>
+            </div>
+            <div className="stat-chip">
+              <span className="stat-chip__label">Активдүү бөлүм</span>
+              <strong>{activeDivisionLabel}</strong>
+            </div>
+            <div className="stat-chip">
+              <span className="stat-chip__label">Учурдагы этап</span>
+              <strong>{stageMeta[playoffStage]?.short || 'Журнал'}</strong>
             </div>
           </div>
+        </section>
+
+        <section className="role-strip">
+          <article className="role-card role-card--admin">
+            <p className="eyebrow">Роль</p>
+            <h3>Админ</h3>
+            <p>Бул жерден турнирди башкарып, оюнчуларды, журналды, рейтингди жана плей-оффту толук көзөмөлдөйсүз.</p>
+          </article>
+          <article className="role-card role-card--user">
+            <p className="eyebrow">Оюнчу</p>
+            <h3>Колдонуучу сайты</h3>
+            <p>Оюнчу үчүн жөнөкөй жол өзүнчө калды: катталуу, кирүү, өз упайын жөнөтүү, рейтинг жана өз плей-оффун көрүү.</p>
+          </article>
         </section>
 
         {activeTab === 'players' && (
@@ -1657,10 +1696,29 @@ const App = () => {
                 </div>
               </div>
 
+              <div className="division-board">
+                {divisionOverview.map((division) => (
+                  <button
+                    key={`journal-division-${division.id}`}
+                    type="button"
+                    className={`division-card ${division.isActive ? 'division-card--active' : ''}`}
+                    onClick={() => setViewDivision(division.id)}
+                  >
+                    <div className="division-card__top">
+                      <span className={`division-badge division-badge--${division.id}`}>{division.label}</span>
+                      <span className="division-card__stage">{division.stageShort}</span>
+                    </div>
+                    <strong>{division.playersCount} оюнчу</strong>
+                    <p>Этап: {division.stageLabel}</p>
+                    <p>Лидер: {division.topLabel}</p>
+                  </button>
+                ))}
+              </div>
+
               <div className="player-search">
                 <input
                   className="field__control"
-                  placeholder="Журналдан издөө: аты, телефон же жынысы"
+                  placeholder={`Журналдан издөө: ${activeDivisionLabel} бөлүмү`}
                   value={journalSearchQuery}
                   onChange={(event) => setJournalSearchQuery(event.target.value)}
                 />
@@ -1976,8 +2034,8 @@ const App = () => {
           <section className="panel">
             <div className="panel__header panel__header--stack">
               <div>
-                <p className="eyebrow">Тандоо</p>
-                <h3 className="panel__title">Жыйынтык жана тандоо</h3>
+                <p className="eyebrow">Рейтинг</p>
+                <h3 className="panel__title">Жыйынтык жана тандоо: {activeDivisionLabel}</h3>
                 <p>
                   Плей-оффко азыр <strong>{COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Эркек'}</strong>{' '}
                   категориясындагы {playoffEligiblePlayers.length} оюнчу кирет.
@@ -2011,6 +2069,25 @@ const App = () => {
               </div>
             </div>
 
+            <div className="division-board">
+              {divisionOverview.map((division) => (
+                <button
+                  key={`rating-division-${division.id}`}
+                  type="button"
+                  className={`division-card ${division.isActive ? 'division-card--active' : ''}`}
+                  onClick={() => setViewDivision(division.id)}
+                >
+                  <div className="division-card__top">
+                    <span className={`division-badge division-badge--${division.id}`}>{division.label}</span>
+                    <span className="division-card__stage">Топ-{competitionDivisions[division.id]?.playoffMode || 16}</span>
+                  </div>
+                  <strong>{division.playoffCount} оюнчу тандалат</strong>
+                  <p>Этап: {division.stageLabel}</p>
+                  <p>Лидер: {division.topLabel}</p>
+                </button>
+              ))}
+            </div>
+
             <div className="rating-list">
               {playoffEligiblePlayers.map((player, index) => (
                 <article key={player.id} className={`rating-card ${index < playoffMode ? 'rating-card--selected' : ''}`}>
@@ -2040,6 +2117,7 @@ const App = () => {
               <div>
                 <p className="eyebrow">Финалдык тор</p>
                 <h3 className="panel__title">Беттеш тору: {COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label}</h3>
+                <p className="panel__subtitle">Эки бөлүм өз-өзүнчө этап менен жүрөт. Бул жерде азыр тандалган бөлүмдүн гана тору ачылат.</p>
               </div>
               <div className="mode-switch">
                 {COMPETITION_DIVISIONS.map((division) => (
@@ -2053,6 +2131,25 @@ const App = () => {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="division-board">
+              {divisionOverview.map((division) => (
+                <button
+                  key={`playoff-division-${division.id}`}
+                  type="button"
+                  className={`division-card ${division.isActive ? 'division-card--active' : ''}`}
+                  onClick={() => setViewDivision(division.id)}
+                >
+                  <div className="division-card__top">
+                    <span className={`division-badge division-badge--${division.id}`}>{division.label}</span>
+                    <span className="division-card__stage">{division.stageShort}</span>
+                  </div>
+                  <strong>{division.playoffCount} оюнчу тордо</strong>
+                  <p>Этап: {division.stageLabel}</p>
+                  <p>Лидер: {division.topLabel}</p>
+                </button>
+              ))}
             </div>
 
             <div

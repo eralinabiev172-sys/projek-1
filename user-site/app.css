@@ -4,6 +4,32 @@
   --text-muted: #64748b;
 }
 
+.player-status-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.player-status-card {
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+}
+
+.player-status-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.05rem;
+}
+
+.player-status-card__label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .app-shell {
   position: relative;
   min-height: 100vh;
@@ -830,6 +856,10 @@
   .hero-stats {
     justify-content: flex-start;
   }
+
+  .player-status-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 840px) {
@@ -906,6 +936,10 @@
   .hero-stats {
     width: 100%;
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .player-status-board {
     grid-template-columns: 1fr;
   }
 

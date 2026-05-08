@@ -446,6 +446,13 @@ function App() {
   const hasSubmittedCurrentRound = currentRoundScore !== '' && currentRoundScore !== null && currentRoundScore !== undefined
   const isJournalLocked = activeCompetitionState.playoffStage !== 'none'
   const isRegistered = Boolean(selectedPlayer)
+  const playerDivisionLabel = selectedPlayer?.gender === 'female' ? 'Аял' : 'Эркек'
+  const playerJournalStatusLabel = isJournalLocked ? 'Жабык' : `Ачык A${activeScoreRound}`
+  const playerPlayoffStatusLabel = playerPlayoffMatch
+    ? activeCompetitionState.playoffStage === 'final'
+      ? `Финал A${currentPlayoffRound}`
+      : stageTitles[activeCompetitionState.playoffStage] || 'Плей-офф'
+    : 'Плей-офф ачыла элек'
   const visibleSections = isRegistered
     ? sections.filter((section) => section.id !== 'register' && section.id !== 'login')
     : sections.filter((section) => section.id === 'register' || section.id === 'login')
@@ -802,6 +809,27 @@ function App() {
             </div>
           </div>
         </section>
+
+        {isRegistered && (
+          <section className="player-status-board">
+            <article className="player-status-card">
+              <span className="player-status-card__label">Менин атым</span>
+              <strong>{selectedPlayer?.name || '—'}</strong>
+            </article>
+            <article className="player-status-card">
+              <span className="player-status-card__label">Менин бөлүмүм</span>
+              <strong>{playerDivisionLabel}</strong>
+            </article>
+            <article className="player-status-card">
+              <span className="player-status-card__label">Журнал</span>
+              <strong>{playerJournalStatusLabel}</strong>
+            </article>
+            <article className="player-status-card">
+              <span className="player-status-card__label">Менин плей-оффум</span>
+              <strong>{playerPlayoffStatusLabel}</strong>
+            </article>
+          </section>
+        )}
 
         {activeSection === 'register' && (
           <section className="panel panel--narrow">
