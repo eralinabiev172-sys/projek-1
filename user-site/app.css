@@ -4,6 +4,18 @@
   --text-muted: #64748b;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 .player-status-board {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -66,6 +78,9 @@
   position: sticky;
   top: 16px;
   z-index: 10;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .topbar__brand {
@@ -76,6 +91,10 @@
 
 .topbar__logout {
   flex: 0 0 auto;
+}
+
+.topbar .topbar__logout--mobile {
+  display: none !important;
 }
 
 .brand-icon {
@@ -115,22 +134,14 @@
   padding: 12px;
   border-radius: 28px;
   backdrop-filter: blur(16px);
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.28);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
   display: none;
 }
 
 .bottom-nav--registered {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.bottom-nav__logout {
-  min-height: 52px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .topbar__actions {
@@ -177,6 +188,8 @@
   margin: 24px auto 0;
   display: grid;
   gap: 24px;
+  width: 100%;
+  min-width: 0;
 }
 
 .hero-card {
@@ -186,6 +199,10 @@
   gap: 20px;
   padding: 28px;
   border-radius: 32px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .hero-card__title {
@@ -205,6 +222,8 @@
   gap: 14px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .stat-chip {
@@ -213,6 +232,7 @@
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.95));
   border: 1px solid rgba(148, 163, 184, 0.16);
+  max-width: 100%;
 }
 
 .stat-chip strong {
@@ -234,6 +254,10 @@
 .panel {
   border-radius: 30px;
   padding: 24px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .panel--narrow {
@@ -1170,13 +1194,23 @@
 @media (max-width: 560px) {
   .app-shell {
     padding: 12px 12px 108px;
+    overflow-x: hidden;
   }
 
   .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
     padding: 12px;
   }
 
   .topbar__brand {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .topbar__brand > div:last-child {
     min-width: 0;
   }
 
@@ -1188,11 +1222,24 @@
 
   .brand-title {
     font-size: 1rem;
+    overflow-wrap: anywhere;
   }
 
-  .topbar__actions,
-  .topbar__logout {
+  .topbar__actions {
     display: none;
+  }
+
+  .topbar .topbar__logout--mobile {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.04);
+    color: var(--text-primary);
+    border-color: rgba(148, 163, 184, 0.18);
+    white-space: nowrap;
   }
 
   .bottom-nav {
@@ -1213,25 +1260,58 @@
 
   .bottom-nav .tab-button {
     width: 100%;
-    min-height: 58px;
-    padding: 8px 6px;
+    min-height: 54px;
+    padding: 6px 4px;
     border-radius: 18px;
-    background: transparent;
-    color: rgba(226, 232, 240, 0.78);
-    font-size: 0.78rem;
-    line-height: 1.1;
+    background: rgba(15, 23, 42, 0.04);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: 0.72rem;
+    line-height: 1.05;
   }
 
   .bottom-nav .tab-button--active {
-    background: rgba(37, 99, 235, 0.24);
-    color: #fff;
-    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.28);
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(59, 130, 246, 0.24));
+    color: #1d4ed8;
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.22);
   }
 
-  .bottom-nav__logout {
-    min-height: 42px;
+  .playoff-score-panel {
+    padding: 16px;
+    border-radius: 22px;
   }
 
+  .bracket-grid {
+    --bracket-column-width: min(72vw, 250px);
+    --bracket-column-gap: 12px;
+    --bracket-match-gap: 14px;
+    --bracket-match-height: 84px;
+    padding: 6px 2px 14px;
+  }
+
+  .stage-column {
+    gap: 12px;
+  }
+
+  .stage-column__header h4 {
+    font-size: 0.78rem;
+  }
+
+  .playoff-row {
+    padding: 0 6px;
+    gap: 6px;
+  }
+
+  .playoff-row__name,
+  .playoff-row__score {
+    font-size: 0.76rem;
+  }
   .hero-card__title {
     font-size: 1.7rem;
   }

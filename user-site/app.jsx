@@ -59,6 +59,8 @@ const sections = [
 ]
 
 
+sections.splice(2, 0, { id: 'profile', label: 'Менин бетим' })
+
 const seedOrders = {
   32: [0, 31, 15, 16, 7, 24, 8, 23, 4, 27, 11, 20, 3, 28, 12, 19, 2, 29, 13, 18, 5, 26, 10, 21, 6, 25, 9, 22, 1, 30, 14, 17],
   16: [0, 15, 7, 8, 4, 11, 3, 12, 2, 13, 5, 10, 6, 9, 1, 14],
@@ -873,6 +875,12 @@ function App() {
           </div>
         </div>
 
+        {isRegistered && (
+          <button type="button" className="secondary-button topbar__logout topbar__logout--mobile" onClick={handleResetRegistration}>
+            Чыгуу
+          </button>
+        )}
+
         <nav className="topbar__actions" aria-label="Бөлүмдөр менюсу">
           {visibleSections.map((section) => (
             <button
@@ -935,7 +943,7 @@ function App() {
           </section>
         )}
 
-        {isRegistered && (
+        {isRegistered && activeSection === 'profile' && (
           <section className="player-status-board">
             <article className="player-status-card">
               <span className="player-status-card__label">Менин атым</span>
@@ -1347,12 +1355,6 @@ function App() {
             {section.label}
           </button>
         ))}
-
-        {isRegistered && (
-          <button type="button" className="secondary-button bottom-nav__logout" onClick={handleResetRegistration}>
-            Чыгуу
-          </button>
-        )}
       </nav>
     </div>
   )

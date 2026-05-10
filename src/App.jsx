@@ -2456,6 +2456,22 @@ const App = () => {
           </section>
         )}
       </main>
+
+      <nav className="bottom-nav" aria-label="Админ менюсу">
+        {tabs.map((tab) => (
+          <button
+            key={`bottom-${tab.id}`}
+            type="button"
+            onClick={() => {
+              setActiveTab(tab.id);
+              setIsMenuOpen(false);
+            }}
+            className={`tab-button ${activeTab === tab.id ? 'tab-button--active' : ''}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 };
