@@ -873,10 +873,10 @@ function App() {
           </div>
         </div>
 
-        <div className="topbar__actions">
+        <nav className="topbar__actions" aria-label="Бөлүмдөр менюсу">
           {visibleSections.map((section) => (
             <button
-              key={section.id}
+              key={`top-${section.id}`}
               type="button"
               className={`tab-button ${activeSection === section.id ? 'tab-button--active' : ''}`}
               onClick={() => setActiveSection(section.id)}
@@ -886,11 +886,11 @@ function App() {
           ))}
 
           {isRegistered && (
-            <button type="button" className="secondary-button" onClick={handleResetRegistration}>
+            <button type="button" className="secondary-button topbar__logout" onClick={handleResetRegistration}>
               Чыгуу
             </button>
           )}
-        </div>
+        </nav>
       </header>
 
       <main className="page">
@@ -1335,6 +1335,25 @@ function App() {
           </section>
         )}
       </main>
+
+      <nav className={`bottom-nav ${isRegistered ? 'bottom-nav--registered' : ''}`} aria-label="Бөлүмдөр менюсу">
+        {visibleSections.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            className={`tab-button ${activeSection === section.id ? 'tab-button--active' : ''}`}
+            onClick={() => setActiveSection(section.id)}
+          >
+            {section.label}
+          </button>
+        ))}
+
+        {isRegistered && (
+          <button type="button" className="secondary-button bottom-nav__logout" onClick={handleResetRegistration}>
+            Чыгуу
+          </button>
+        )}
+      </nav>
     </div>
   )
 }

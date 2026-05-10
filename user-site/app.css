@@ -33,7 +33,7 @@
 .app-shell {
   position: relative;
   min-height: 100vh;
-  padding: 24px;
+  padding: 24px 24px 116px;
   color: var(--text-primary);
 }
 
@@ -74,6 +74,10 @@
   gap: 14px;
 }
 
+.topbar__logout {
+  flex: 0 0 auto;
+}
+
 .brand-icon {
   width: 48px;
   height: 48px;
@@ -97,6 +101,36 @@
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-weight: 700;
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 24px;
+  right: 24px;
+  bottom: 20px;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-radius: 28px;
+  backdrop-filter: blur(16px);
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.28);
+  display: none;
+}
+
+.bottom-nav--registered {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.bottom-nav__logout {
+  min-height: 52px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .topbar__actions {
@@ -1099,14 +1133,8 @@
 
   .topbar {
     border-radius: 24px;
-    flex-direction: column;
     align-items: flex-start;
     padding: 14px;
-  }
-
-  .topbar__actions {
-    width: 100%;
-    justify-content: flex-start;
   }
 
   .hero-card,
@@ -1140,6 +1168,10 @@
 }
 
 @media (max-width: 560px) {
+  .app-shell {
+    padding: 12px 12px 108px;
+  }
+
   .topbar {
     padding: 12px;
   }
@@ -1158,13 +1190,46 @@
     font-size: 1rem;
   }
 
-  .tab-button {
-    width: 100%;
+  .topbar__actions,
+  .topbar__logout {
+    display: none;
   }
 
-  .topbar__actions {
+  .bottom-nav {
     display: grid;
-    grid-template-columns: 1fr;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 24px;
+  }
+
+  .bottom-nav--registered {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .bottom-nav .tab-button {
+    width: 100%;
+    min-height: 58px;
+    padding: 8px 6px;
+    border-radius: 18px;
+    background: transparent;
+    color: rgba(226, 232, 240, 0.78);
+    font-size: 0.78rem;
+    line-height: 1.1;
+  }
+
+  .bottom-nav .tab-button--active {
+    background: rgba(37, 99, 235, 0.24);
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.28);
+  }
+
+  .bottom-nav__logout {
+    min-height: 42px;
   }
 
   .hero-card__title {
