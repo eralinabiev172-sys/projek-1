@@ -1358,14 +1358,14 @@ const TargetGroupPanel = ({ selectedPlayerId, targetNumber, players, scores, act
         <div className="pill">{players.length} оюнчу</div>
       </div>
 
-      <div className="target-group-grid">
-        {players.map((player) => {
+      {players
+        .filter((player) => player.id === selectedPlayerId)
+        .map((player) => {
           const total = calculateTotal(scores, player.id)
-          const isCurrentPlayer = player.id === selectedPlayerId
           const targetMeta = targetMap?.[player.id]
 
           return (
-            <article key={player.id} className={`target-player-card ${isCurrentPlayer ? 'target-player-card--current' : ''}`}>
+            <article key={player.id} className="target-player-card target-player-card--current">
               <div className="target-player-card__header">
                 <div>
                   <div className="target-player-card__name-row">
@@ -1399,6 +1399,28 @@ const TargetGroupPanel = ({ selectedPlayerId, targetNumber, players, scores, act
             </article>
           )
         })}
+
+      <div className="target-squad-strip">
+        <p className="target-squad-strip__label">Сиз ушул бутада ушул оюнчулар менен турасыз:</p>
+        <div className="target-squad-strip__list">
+          {players.map((player) => {
+            const isCurrentPlayer = player.id === selectedPlayerId
+            const targetMeta = targetMap?.[player.id]
+
+            return (
+              <article
+                key={`squad-${player.id}`}
+                className={`target-squad-card ${isCurrentPlayer ? 'target-squad-card--current' : ''}`}
+              >
+                <span className="target-lane-badge">{targetMeta?.laneLetter || player.laneLetter || getLaneLetter(player.entryNumber)}</span>
+                <div className="target-squad-card__body">
+                  <strong>{player.name}</strong>
+                  <span>Бута #{targetMeta?.targetNumber || getTargetNumber(player.entryNumber)}</span>
+                </div>
+              </article>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
