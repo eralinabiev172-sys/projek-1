@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_ANON_KEY
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -22,6 +22,8 @@ const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
 const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
 const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
 const COMPETITION_DIVISIONS_META_KEY = '__competitionDivisions'
+const PASSWORD_PROTECTION_META_KEY = '__passwordProtectionEnabled'
+const DEFAULT_PASSWORD_PROTECTION_ENABLED = false
 
 function createEmptyBracket() {
   return {
@@ -46,6 +48,7 @@ function createEmptyCompetitionState() {
 
 function createDefaultCompetitionDivisions() {
   return {
+    all: createEmptyCompetitionState(),
     male: createEmptyCompetitionState(),
     female: createEmptyCompetitionState(),
   }
@@ -53,9 +56,14 @@ function createDefaultCompetitionDivisions() {
 
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
+const sanitizePassword = (value) => String(value || '').replace(/\D/g, '').slice(0, 4)
 const sanitizePlayerName = (value) => String(value || '').replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ').trim()
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
+const isValidPassword = (value) => /^\d{4}$/.test(value)
+const normalizePasswordProtectionEnabled = (value) => (typeof value === 'boolean' ? value : DEFAULT_PASSWORD_PROTECTION_ENABLED)
+const LETTER_SEQUENCE = ['A', 'B', 'C', 'D']
+const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length]
 
 const normalizeScoreSubmission = (value) => ({
   activeRound: [1, 2, 3, 4, 5, 6].includes(Number(value?.activeRound)) ? Number(value.activeRound) : 1,
@@ -95,12 +103,18 @@ const normalizeCompetitionDivisions = (value, legacy = {}) => {
 
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return {
+      all: normalizeCompetitionState(value.all),
       male: normalizeCompetitionState(value.male),
       female: normalizeCompetitionState(value.female),
     }
   }
 
-  const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivision =
+    legacy.playoffDivision === 'female'
+      ? 'female'
+      : legacy.playoffDivision === 'male'
+        ? 'male'
+        : 'all'
   if (hasBracketData(legacy.bracket) || legacy.playoffStage !== 'none') {
     defaults[legacyDivision] = normalizeCompetitionState({
       playoffMode: legacy.playoffMode,
@@ -123,6 +137,7 @@ const extractPlayerNumberBook = (value) => {
   delete nextBook[PLAYOFF_DIVISION_META_KEY]
   delete nextBook[PLAYOFF_FINAL_ROUNDS_META_KEY]
   delete nextBook[COMPETITION_DIVISIONS_META_KEY]
+  delete nextBook[PASSWORD_PROTECTION_META_KEY]
   return nextBook
 }
 
@@ -143,24 +158,29 @@ const readStoredCompetitionDivisions = (dbRow) =>
     playoffFinalRounds: readStoredPlayoffFinalRounds(dbRow),
   })
 
+const readStoredPasswordProtectionEnabled = (dbRow) =>
+  normalizePasswordProtectionEnabled(dbRow.player_number_book?.[PASSWORD_PROTECTION_META_KEY])
+
 const writeStoredPlayerNumberBook = (
   playerNumberBook,
   scoreSubmission,
   playoffDivision,
   playoffFinalRounds,
   competitionDivisions,
+  passwordProtectionEnabled,
 ) => ({
   ...(playerNumberBook || {}),
   [SCORE_SUBMISSION_META_KEY]: normalizeScoreSubmission(scoreSubmission),
   [PLAYOFF_DIVISION_META_KEY]: normalizePlayoffDivision(playoffDivision),
   [PLAYOFF_FINAL_ROUNDS_META_KEY]: normalizePlayoffFinalRounds(playoffFinalRounds),
   [COMPETITION_DIVISIONS_META_KEY]: normalizeCompetitionDivisions(competitionDivisions),
+  [PASSWORD_PROTECTION_META_KEY]: normalizePasswordProtectionEnabled(passwordProtectionEnabled),
 })
 
 const dbToJs = (dbRow) => {
   const playoffDivision = readStoredPlayoffDivision(dbRow)
   const competitionDivisions = readStoredCompetitionDivisions(dbRow)
-  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : playoffDivision === 'male' ? 'male' : 'all'
   const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
 
   return {
@@ -177,6 +197,7 @@ const dbToJs = (dbRow) => {
     playoffStage: legacyDivisionState.playoffStage,
     playoffMode: legacyDivisionState.playoffMode,
     competitionDivisions,
+    passwordProtectionEnabled: readStoredPasswordProtectionEnabled(dbRow),
     playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
     scoreSubmission: readStoredScoreSubmission(dbRow),
   }
@@ -185,7 +206,7 @@ const dbToJs = (dbRow) => {
 const jsToDb = (jsState) => {
   const playoffDivision = normalizePlayoffDivision(jsState.playoffDivision)
   const competitionDivisions = normalizeCompetitionDivisions(jsState.competitionDivisions, jsState)
-  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : playoffDivision === 'male' ? 'male' : 'all'
   const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
 
   return {
@@ -196,6 +217,7 @@ const jsToDb = (jsState) => {
       playoffDivision,
       legacyDivisionState.playoffFinalRounds,
       competitionDivisions,
+      jsState.passwordProtectionEnabled,
     ),
   }
 }
@@ -220,17 +242,22 @@ export default async function handler(req, res) {
   const supabase = createClient(supabaseUrl, supabaseKey)
 
   try {
-    const { name: rawName, phone: rawPhone, gender } = req.body
+    const { name: rawName, phone: rawPhone, password: rawPassword, gender } = req.body
     const name = sanitizePlayerName(rawName)
     const phone = sanitizePhone(rawPhone)
+    const password = sanitizePassword(rawPassword)
     const playerGender = gender === 'female' ? 'female' : 'male'
 
     if (!name || !isValidPlayerName(name)) {
-      return res.status(400).json({ error: 'РђС‚С‹-Р¶У©РЅТЇ С‚СѓСѓСЂР° СЌРјРµСЃ.' })
+      return res.status(400).json({ error: 'Name is invalid.' })
     }
 
     if (phone && !isValidPhone(phone)) {
-      return res.status(400).json({ error: 'РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё С‚СѓСѓСЂР° СЌРјРµСЃ.' })
+      return res.status(400).json({ error: 'Phone is invalid.' })
+    }
+
+    if (rawPassword !== undefined && rawPassword !== null && String(rawPassword).trim() !== '' && !isValidPassword(password)) {
+      return res.status(400).json({ error: 'Password must be exactly 4 digits.' })
     }
 
     const { data: currentData, error: fetchError } = await supabase
@@ -248,13 +275,10 @@ export default async function handler(req, res) {
     const normalizedName = normalizePlayerName(name)
     const existsByName = currentState.players.some((player) => normalizePlayerName(player.name || '') === normalizedName)
     const existsByPhone = phone && currentState.players.some((player) => sanitizePhone(player.phone) === phone)
+    const hasPassword = isValidPassword(password)
 
-    if (existsByName) {
-      return res.status(400).json({ error: 'РњС‹РЅРґР°Р№ Р°С‚С‚Р°РіС‹ РєР°С‚С‹С€СѓСѓС‡Сѓ РјСѓСЂСѓРЅ РєР°С‚С‚Р°Р»РіР°РЅ.' })
-    }
-
-    if (existsByPhone) {
-      return res.status(400).json({ error: 'РњС‹РЅРґР°Р№ С‚РµР»РµС„РѕРЅ РЅРѕРјРµСЂРё РјРµРЅРµРЅ РєР°С‚С‹С€СѓСѓС‡Сѓ РјСѓСЂСѓРЅ РєР°С‚С‚Р°Р»РіР°РЅ.' })
+    if (existsByName || existsByPhone) {
+      return res.status(200).json(currentState)
     }
 
     const highestNumber = Math.max(0, ...Object.values(currentState.playerNumberBook || {}).map((value) => Number(value) || 0))
@@ -263,8 +287,10 @@ export default async function handler(req, res) {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name,
       phone,
+      password: hasPassword ? password : '',
       gender: playerGender,
       entryNumber,
+      laneLetter: getLaneLetter(entryNumber),
     }
 
     const nextState = {

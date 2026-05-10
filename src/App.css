@@ -48,10 +48,16 @@
 .division-badge {
   display: inline-flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 5px 10px;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 800;
+  line-height: 1.1;
+}
+
+.division-badge--all {
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
 }
 
 .division-badge--male {
@@ -828,12 +834,23 @@
 .rating-card--selected {
   background: linear-gradient(135deg, rgba(219, 234, 254, 0.9), rgba(239, 246, 255, 0.94));
   border-color: rgba(37, 99, 235, 0.22);
+  box-shadow: 0 16px 32px rgba(37, 99, 235, 0.14);
+}
+
+.rating-card--waiting {
+  opacity: 0.88;
 }
 
 .rating-card__left {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.rating-card__right {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
 }
 
 .rating-card p {
@@ -850,6 +867,39 @@
   background: linear-gradient(135deg, #0f172a, #1d4ed8);
   color: #fff;
   font-weight: 800;
+}
+
+.rating-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.rating-summary-strip__item,
+.rating-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.rating-summary-strip__item {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--text-secondary);
+}
+
+.rating-status-pill--in {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.rating-status-pill--out {
+  background: rgba(148, 163, 184, 0.14);
+  color: #475569;
 }
 
 .panel__footer {
@@ -2462,7 +2512,7 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 20mm 15mm 20mm 30mm;
   }
 
   .app-shell {

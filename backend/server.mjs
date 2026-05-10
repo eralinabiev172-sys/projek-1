@@ -36,6 +36,7 @@ const DEFAULT_STATE = {
   players: [],
   scores: {},
   competitionDivisions: {
+    all: createEmptyCompetitionState(),
     male: createEmptyCompetitionState(),
     female: createEmptyCompetitionState(),
   },
@@ -44,11 +45,15 @@ const DEFAULT_STATE = {
     activeRound: 1,
     entries: [],
   },
+  passwordProtectionEnabled: false,
 }
 
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
 const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
+const sanitizePassword = (value) => String(value || '').replace(/\D/g, '').slice(0, 4)
 const sanitizePlayerName = (value) => String(value || '').replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ').trim()
+const LETTER_SEQUENCE = ['A', 'B', 'C', 'D']
+const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length]
 
 let writeQueue = Promise.resolve()
 
@@ -75,6 +80,7 @@ const readState = async () => {
       scores: parsed.scores || {},
       playerNumberBook: parsed.playerNumberBook || {},
       scoreSubmission: normalizeScoreSubmission(parsed.scoreSubmission),
+      passwordProtectionEnabled: normalizePasswordProtectionEnabled(parsed.passwordProtectionEnabled),
     }
   } catch {
     return { ...DEFAULT_STATE }
@@ -116,6 +122,8 @@ const readBody = async (request) =>
 
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value)
 const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
+const isValidPassword = (value) => /^\d{4}$/.test(value)
+const normalizePasswordProtectionEnabled = (value) => (typeof value === 'boolean' ? value : false)
 const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= MAX_PLAYER_SCORE
 const isScoreInputDigitsOnly = (value) => /^\d{1,3}$/.test(String(value || '').trim())
 const PLAYOFF_SUBMISSION_STAGES = ['roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final']
@@ -138,18 +146,25 @@ const normalizeCompetitionState = (value) => ({
 })
 const normalizeCompetitionDivisions = (value, legacy = {}) => {
   const defaults = {
+    all: createEmptyCompetitionState(),
     male: createEmptyCompetitionState(),
     female: createEmptyCompetitionState(),
   }
 
   if (value && typeof value === 'object') {
     return {
+      all: normalizeCompetitionState(value.all),
       male: normalizeCompetitionState(value.male),
       female: normalizeCompetitionState(value.female),
     }
   }
 
-  const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivision =
+    legacy.playoffDivision === 'female'
+      ? 'female'
+      : legacy.playoffDivision === 'male'
+        ? 'male'
+        : 'all'
   const hasLegacyBracket = Boolean(
     legacy.bracket &&
       (legacy.bracket.final12 ||
@@ -212,6 +227,7 @@ const registerPlayer = async (payload) => {
   const currentState = await readState()
   const name = sanitizePlayerName(payload.name)
   const phone = sanitizePhone(payload.phone)
+  const password = sanitizePassword(payload.password)
   const gender = payload.gender === 'female' ? 'female' : 'male'
 
   if (!name || !isValidPlayerName(name)) {
@@ -222,9 +238,14 @@ const registerPlayer = async (payload) => {
     throw new Error('Телефон номери туура эмес.')
   }
 
+  if (payload.password !== undefined && payload.password !== null && String(payload.password).trim() !== '' && !isValidPassword(password)) {
+    throw new Error('Password must be exactly 4 digits.')
+  }
+
   const normalizedName = normalizePlayerName(name)
   const existsByName = currentState.players.some((player) => normalizePlayerName(player.name || '') === normalizedName)
   const existsByPhone = phone && currentState.players.some((player) => sanitizePhone(player.phone) === phone)
+  const hasPassword = isValidPassword(password)
 
   if (existsByName) {
     throw new Error('Мындай аттагы катышуучу мурун катталган.')
@@ -239,7 +260,18 @@ const registerPlayer = async (payload) => {
 
   const nextState = {
     ...currentState,
-    players: [...currentState.players, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, phone, gender, entryNumber }],
+    players: [
+      ...currentState.players,
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        phone,
+        password: hasPassword ? password : '',
+        gender,
+        entryNumber,
+        laneLetter: getLaneLetter(entryNumber),
+      },
+    ],
     playerNumberBook: {
       ...(currentState.playerNumberBook || {}),
       [normalizedName]: entryNumber,
@@ -253,9 +285,10 @@ const registerPlayer = async (payload) => {
 const submitPlayerScore = async (payload) => {
   const currentState = await readState()
   const playerId = String(payload.playerId || '').trim()
-  const phone = sanitizePhone(payload.phone)
+  const password = sanitizePassword(payload.password)
   const rawScore = String(payload.score || '').trim()
   const score = Number.parseInt(rawScore, 10)
+  const passwordProtectionEnabled = false
   const scoreSubmission = normalizeScoreSubmission(currentState.scoreSubmission)
   const activeRound = scoreSubmission.activeRound
 
@@ -263,7 +296,7 @@ const submitPlayerScore = async (payload) => {
     throw new Error('Оюнчу тандалган жок.')
   }
 
-  if (!phone || !isValidPhone(phone)) {
+  if (passwordProtectionEnabled && (!password || !isValidPassword(password))) {
     throw new Error('Телефон номери туура эмес.')
   }
 
@@ -276,7 +309,7 @@ const submitPlayerScore = async (payload) => {
     throw new Error('Оюнчу табылган жок.')
   }
 
-  if (sanitizePhone(player.phone) !== phone) {
+  if (passwordProtectionEnabled && sanitizePassword(player.password) !== password) {
     throw new Error('Телефон номери дал келген жок.')
   }
 
@@ -316,16 +349,17 @@ const submitPlayerScore = async (payload) => {
 const submitPlayoffPlayerScore = async (payload) => {
   const currentState = await readState()
   const playerId = String(payload.playerId || '').trim()
-  const phone = sanitizePhone(payload.phone)
+  const password = sanitizePassword(payload.password)
   const rawScore = String(payload.score || '').trim()
   const score = Number.parseInt(rawScore, 10)
+  const passwordProtectionEnabled = false
 
   if (!playerId) {
     throw new Error('РћСЋРЅС‡Сѓ С‚Р°РЅРґР°Р»РіР°РЅ Р¶РѕРє.')
   }
 
-  if (!phone || !isValidPhone(phone)) {
-    throw new Error('РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё С‚СѓСѓСЂР° СЌРјРµСЃ.')
+  if (passwordProtectionEnabled && (!password || !isValidPassword(password))) {
+    throw new Error('Password must be exactly 4 digits.')
   }
 
   if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
@@ -337,8 +371,8 @@ const submitPlayoffPlayerScore = async (payload) => {
     throw new Error('РћСЋРЅС‡Сѓ С‚Р°Р±С‹Р»РіР°РЅ Р¶РѕРє.')
   }
 
-  if (sanitizePhone(player.phone) !== phone) {
-    throw new Error('РўРµР»РµС„РѕРЅ РЅРѕРјРµСЂРё РґР°Р» РєРµР»РіРµРЅ Р¶РѕРє.')
+  if (passwordProtectionEnabled && sanitizePassword(player.password) !== password) {
+    throw new Error('Incorrect 4-digit password.')
   }
 
   const divisionId = player.gender === 'female' ? 'female' : 'male'
@@ -476,6 +510,7 @@ const server = createServer(async (request, response) => {
         scores: body.scores || {},
         playerNumberBook: body.playerNumberBook || {},
         scoreSubmission: normalizeScoreSubmission(body.scoreSubmission),
+        passwordProtectionEnabled: normalizePasswordProtectionEnabled(body.passwordProtectionEnabled),
       }
       await writeState(nextState)
       sendJson(response, 200, nextState)

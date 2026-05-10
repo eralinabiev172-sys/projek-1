@@ -15,11 +15,14 @@ const EMPTY_BRACKET = {
 
 const FINAL_PRIMARY_ROUNDS = 6
 const FINAL_ROUNDS_COUNT = 12
+const TARGET_GROUP_SIZE = 4
+const QUALIFICATION_ROUNDS = [1, 2, 3, 4, 5, 6]
 const PLAYER_IDENTITY_KEY = 'archery_user_registered_player_v1'
 const DEFAULT_SCORE_SUBMISSION = {
   activeRound: 1,
   entries: [],
 }
+const DEFAULT_PASSWORD_PROTECTION_ENABLED = false
 const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
   final12: 1,
   final34: 1,
@@ -32,17 +35,19 @@ const createEmptyCompetitionState = () => ({
 })
 
 const DEFAULT_STATE = {
-  tournamentName: 'Жаа атуу боюнча турнир',
+  tournamentName: 'Жаа атуу боюнча мелдеш',
   location: 'Чолпон-Ата, 2026-жыл',
-  category: 'Классикалык жаа, 50 метр, эркектер',
+  category: 'Салттуу жаа, 50 метр, эркектер',
   players: [],
   scores: {},
   competitionDivisions: {
+    all: createEmptyCompetitionState(),
     male: createEmptyCompetitionState(),
     female: createEmptyCompetitionState(),
   },
   playerNumberBook: {},
   scoreSubmission: DEFAULT_SCORE_SUBMISSION,
+  passwordProtectionEnabled: DEFAULT_PASSWORD_PROTECTION_ENABLED,
 }
 
 const sections = [
@@ -73,7 +78,6 @@ const initialLoginForm = {
 
 const initialScoreForm = {
   playerId: '',
-  phone: '',
   score: '',
 }
 
@@ -101,6 +105,13 @@ const MAX_PLAYER_SCORE = 30
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
 const sanitizePlayerName = (value) => value.replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ')
 const sanitizePhone = (value) => value.replace(/\D/g, '').slice(0, 10)
+const sanitizePassword = (value) => value.replace(/\D/g, '').slice(0, 4)
+const LETTER_SEQUENCE = ['A', 'B', 'C', 'D']
+const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length]
+const getTargetNumber = (entryNumber) => Math.floor((Math.max(Number(entryNumber) || 1, 1) - 1) / TARGET_GROUP_SIZE) + 1
+const getPlayerRoundScore = (scores, playerId, round) => scores?.[playerId]?.[round] ?? ''
+const getGenderLabel = (gender) => (gender === 'female' ? 'Аял' : 'Эркек')
+const normalizePasswordProtectionEnabled = (value) => (typeof value === 'boolean' ? value : DEFAULT_PASSWORD_PROTECTION_ENABLED)
 const sanitizeNonNegativeNumber = (value) => {
   const digitsOnly = value.replace(/[^\d]/g, '').slice(0, 2)
   if (digitsOnly === '') {
@@ -111,16 +122,26 @@ const sanitizeNonNegativeNumber = (value) => {
 }
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value.trim())
 const isValidPhone = (value) => /^\d+$/.test(value.trim())
+const isValidPassword = (value) => /^\d{4}$/.test(value.trim())
 const normalizePlayoffFinalRounds = (value) => ({
   final12: [1, 2, 3, 4, 5, 6].includes(Number(value?.final12)) ? Number(value.final12) : 1,
   final34: [1, 2, 3, 4, 5, 6].includes(Number(value?.final34)) ? Number(value.final34) : 1,
 })
 const findPlayerByName = (players, name) =>
   players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(name))
+const findPlayerByCredentials = (players, fullName) =>
+  players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(fullName))
+const findPlayerForRegistration = (players, { fullName, phone, password }) =>
+  players.find(
+    (player) =>
+      normalizePlayerName(player.name || '') === normalizePlayerName(fullName) ||
+      sanitizePhone(player.phone || '') === sanitizePhone(phone),
+  )
 
 const createEmptyState = () => ({
   ...DEFAULT_STATE,
   competitionDivisions: {
+    all: createEmptyCompetitionState(),
     male: createEmptyCompetitionState(),
     female: createEmptyCompetitionState(),
   },
@@ -187,6 +208,24 @@ const sortPlayersByEntryNumber = (players) =>
     return (left.name || '').localeCompare(right.name || '')
   })
 
+const buildGenderTargetMap = (players) => {
+  const targetMap = {}
+  const sortedPlayers = sortPlayersByEntryNumber(players)
+
+  ;['male', 'female'].forEach((gender) => {
+    sortedPlayers
+      .filter((player) => player.gender === gender)
+      .forEach((player, index) => {
+        targetMap[player.id] = {
+          laneLetter: LETTER_SEQUENCE[index % TARGET_GROUP_SIZE],
+          targetNumber: Math.floor(index / TARGET_GROUP_SIZE) + 1,
+        }
+      })
+  })
+
+  return targetMap
+}
+
 const parseTournamentState = (payload) => {
   if (!payload) {
     return createEmptyState()
@@ -197,6 +236,7 @@ const parseTournamentState = (payload) => {
   const normalizedPlayers = players.map((player, index) => ({
     ...player,
     entryNumber: player.entryNumber ?? index + 1,
+    laneLetter: player.laneLetter || getLaneLetter(player.entryNumber ?? index + 1),
   }))
   const playerNumberBook = buildPlayerNumberBook(normalizedPlayers, parsed.playerNumberBook || {})
 
@@ -210,18 +250,25 @@ const parseTournamentState = (payload) => {
   })
   const normalizeCompetitionDivisions = (value, legacy = {}) => {
     const defaults = {
+      all: createEmptyCompetitionState(),
       male: createEmptyCompetitionState(),
       female: createEmptyCompetitionState(),
     }
 
     if (value && typeof value === 'object') {
       return {
+        all: normalizeCompetitionState(value.all),
         male: normalizeCompetitionState(value.male),
         female: normalizeCompetitionState(value.female),
       }
     }
 
-    const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+    const legacyDivision =
+      legacy.playoffDivision === 'female'
+        ? 'female'
+        : legacy.playoffDivision === 'male'
+          ? 'male'
+          : 'all'
     defaults[legacyDivision] = normalizeCompetitionState({
       playoffMode: legacy.playoffMode,
       playoffStage: legacy.playoffStage,
@@ -234,6 +281,7 @@ const parseTournamentState = (payload) => {
   return {
     ...DEFAULT_STATE,
     ...parsed,
+    passwordProtectionEnabled: normalizePasswordProtectionEnabled(parsed.passwordProtectionEnabled),
     players: sortPlayersByEntryNumber(normalizedPlayers),
     playerNumberBook,
     competitionDivisions: normalizeCompetitionDivisions(parsed.competitionDivisions, parsed),
@@ -322,7 +370,7 @@ const TargetIcon = ({ size = 20 }) => (
 )
 
 function App() {
-  const [activeSection, setActiveSection] = useState('register')
+  const [activeSection, setActiveSection] = useState(null)
   const [registrationMessage, setRegistrationMessage] = useState('')
   const [loginMessage, setLoginMessage] = useState('')
   const [scoreMessage, setScoreMessage] = useState('')
@@ -374,12 +422,40 @@ function App() {
   }, [tournamentState.players, tournamentState.scores])
   const maleRatingPlayers = useMemo(() => ratingPlayers.filter((player) => player.gender === 'male'), [ratingPlayers])
   const femaleRatingPlayers = useMemo(() => ratingPlayers.filter((player) => player.gender === 'female'), [ratingPlayers])
+  const malePlayoffMode = tournamentState.competitionDivisions?.male?.playoffMode || 16
+  const femalePlayoffMode = tournamentState.competitionDivisions?.female?.playoffMode || 16
   const selectedPlayer = useMemo(
     () => tournamentState.players.find((player) => player.id === registeredPlayer?.playerId) || null,
     [registeredPlayer, tournamentState.players],
   )
-  const playerCompetitionDivision = selectedPlayer?.gender === 'female' ? 'female' : 'male'
+  const genderTargetMap = useMemo(() => buildGenderTargetMap(tournamentState.players), [tournamentState.players])
+  const selectedTargetMeta = selectedPlayer ? genderTargetMap[selectedPlayer.id] || null : null
+  const selectedTargetNumber = selectedTargetMeta?.targetNumber || null
+  const selectedTargetGroup = useMemo(() => {
+    if (!selectedPlayer) {
+      return []
+    }
+
+    const currentTargetMeta = genderTargetMap[selectedPlayer.id]
+    if (!currentTargetMeta) {
+      return []
+    }
+
+    return sortPlayersByEntryNumber(
+      tournamentState.players.filter((player) => {
+        const playerTargetMeta = genderTargetMap[player.id]
+        return player.gender === selectedPlayer.gender && playerTargetMeta?.targetNumber === currentTargetMeta.targetNumber
+      }),
+    ).slice(0, TARGET_GROUP_SIZE)
+  }, [genderTargetMap, selectedPlayer, tournamentState.players])
+  const playerCompetitionDivision =
+    tournamentState.competitionDivisions?.all?.playoffStage !== 'none'
+      ? 'all'
+      : selectedPlayer?.gender === 'female'
+        ? 'female'
+        : 'male'
   const activeCompetitionState = tournamentState.competitionDivisions?.[playerCompetitionDivision] || createEmptyCompetitionState()
+  const passwordProtectionEnabled = false
 
   const playoffMatches = useMemo(() => getAllMatches(activeCompetitionState.bracket), [activeCompetitionState.bracket])
   const activeScoreRound = tournamentState.scoreSubmission?.activeRound || 1
@@ -451,8 +527,8 @@ function App() {
   const playerPlayoffStatusLabel = playerPlayoffMatch
     ? activeCompetitionState.playoffStage === 'final'
       ? `Финал A${currentPlayoffRound}`
-      : stageTitles[activeCompetitionState.playoffStage] || 'Плей-офф'
-    : 'Плей-офф ачыла элек'
+      : stageTitles[activeCompetitionState.playoffStage] || 'Жеке элек'
+    : 'Жеке элек ачыла элек'
   const visibleSections = isRegistered
     ? sections.filter((section) => section.id !== 'register' && section.id !== 'login')
     : sections.filter((section) => section.id === 'register' || section.id === 'login')
@@ -465,7 +541,6 @@ function App() {
     setScoreForm((current) => ({
       ...current,
       playerId: selectedPlayer.id,
-      phone: selectedPlayer.phone || '',
     }))
   }, [selectedPlayer])
 
@@ -496,8 +571,8 @@ function App() {
       return
     }
 
-    if (activeSection !== 'register' && activeSection !== 'login') {
-      setActiveSection('register')
+    if (activeSection && activeSection !== 'register' && activeSection !== 'login') {
+      setActiveSection(null)
     }
   }, [activeSection, isRegistered])
 
@@ -518,7 +593,14 @@ function App() {
   }
 
   const handleLoginChange = ({ target }) => {
-    setLoginForm({ fullName: sanitizePlayerName(target.value) })
+    const { name, value } = target
+
+    if (name === 'fullName') {
+      setLoginForm((current) => ({ ...current, fullName: sanitizePlayerName(value) }))
+      return
+    }
+
+    setLoginForm((current) => ({ ...current, fullName: sanitizePlayerName(value) }))
   }
 
   const handleRegistrationSubmit = async (event) => {
@@ -533,7 +615,7 @@ function App() {
     const phone = registrationForm.phone.trim()
 
     if (!fullName || !phone) {
-      setRegistrationMessage('Атыңызды жана телефон номериңизди толтуруңуз.')
+      setRegistrationMessage('Атыңызды жана 4 орундуу сырсөздү толтуруңуз.')
       return
     }
 
@@ -543,7 +625,25 @@ function App() {
     }
 
     if (!isValidPhone(phone)) {
-      setRegistrationMessage('Телефон номери талаасына сандар гана жазылышы керек.')
+      setRegistrationMessage('Номерге цифралар гана жазылышы керек.')
+      return
+    }
+
+    if (false && passwordProtectionEnabled) {
+      setRegistrationMessage('Сырсөз так 4 цифрадан турушу керек.')
+      return
+    }
+
+    const existingPlayer = findPlayerForRegistration(tournamentState.players, { fullName, phone })
+    if (existingPlayer) {
+      const identity = { playerId: existingPlayer.id, name: existingPlayer.name }
+      setRegisteredPlayer(identity)
+      saveRegisteredPlayer(identity)
+      setRegistrationForm(initialRegistrationForm)
+      setLoginForm({ fullName: existingPlayer.name })
+      setRegistrationMessage('Катышуучу мурда катталган. Система сизди автоматтык киргизди.')
+      setLoginMessage('')
+      setActiveSection('scoreEntry')
       return
     }
 
@@ -557,7 +657,7 @@ function App() {
       )
 
       setTournamentState(nextState)
-      const savedPlayer = findPlayerByName(nextState.players, fullName)
+      const savedPlayer = findPlayerForRegistration(nextState.players, { fullName, phone })
       if (savedPlayer) {
         const identity = { playerId: savedPlayer.id, name: savedPlayer.name }
         setRegisteredPlayer(identity)
@@ -583,18 +683,23 @@ function App() {
     const fullName = loginForm.fullName.trim()
 
     if (!fullName) {
-      setLoginMessage('Атыңызды жазыңыз.')
+      setLoginMessage('4 орундуу сырсөздү жазыңыз.')
+      return
+    }
+
+    if (passwordProtectionEnabled && !isValidPassword(password)) {
+      setLoginMessage('Сырсөз так 4 цифра болушу керек.')
       return
     }
 
     if (!isValidPlayerName(fullName)) {
-      setLoginMessage('Аты-жөнү талаасына сандарды же башка белгилерди жазууга болбойт.')
+      setLoginMessage('Аты-жөнү туура эмес толтурулган.')
       return
     }
 
-    const matchedPlayer = findPlayerByName(tournamentState.players, fullName)
+    const matchedPlayer = findPlayerByCredentials(tournamentState.players, fullName)
     if (!matchedPlayer) {
-      setLoginMessage('Мындай аттагы катышуучу табылган жок. Адегенде катталуу керек.')
+      setLoginMessage('Мындай 4 орундуу сырсөз менен катышуучу табылган жок.')
       return
     }
 
@@ -627,7 +732,7 @@ function App() {
     event.preventDefault()
 
     if (isJournalLocked) {
-      setScoreMessage('После нажатия "Торду түзүү" журнал закрыт. Теперь очки можно писать только в плей-офф.')
+      setScoreMessage('"Торду түзүү" баскычын баскандан кийин журнал жабылат. Андан кийин упай плей-оффко гана жазылат.')
       return
     }
 
@@ -636,8 +741,8 @@ function App() {
       return
     }
 
-    if (!scoreForm.phone.trim()) {
-      setScoreMessage('Телефон номериңизди жазыңыз.')
+    if (false && passwordProtectionEnabled) {
+      setScoreMessage('Сырсөз табылган жок.')
       return
     }
 
@@ -665,13 +770,12 @@ function App() {
       const nextState = parseTournamentState(
         await submitPlayerScore({
           playerId: scoreForm.playerId,
-          phone: scoreForm.phone.trim(),
           score: scoreForm.score,
         }),
       )
 
       setTournamentState(nextState)
-      setScoreForm((current) => ({ ...initialScoreForm, playerId: current.playerId, phone: current.phone }))
+      setScoreForm((current) => ({ ...initialScoreForm, playerId: current.playerId }))
       setScoreMessage(`Упай журналга жазылды. Азыр ачык раунд: ${nextState.scoreSubmission.activeRound}.`)
     } catch (error) {
       setScoreMessage(error.message || 'Упайды жөнөтүү мүмкүн болгон жок.')
@@ -686,8 +790,8 @@ function App() {
       return
     }
 
-    if (!selectedPlayer.phone?.trim()) {
-      setPlayoffScoreMessage('Телефон номери жок.')
+    if (false && passwordProtectionEnabled) {
+      setPlayoffScoreMessage('Сырсөз табылган жок.')
       return
     }
 
@@ -720,7 +824,6 @@ function App() {
       const nextState = parseTournamentState(
         await submitPlayoffPlayerScore({
           playerId: selectedPlayer.id,
-          phone: selectedPlayer.phone.trim(),
           score: playoffScoreForm.score,
         }),
       )
@@ -752,7 +855,7 @@ function App() {
     setLoginMessage('')
     setScoreMessage('')
     setPlayoffScoreMessage('')
-    setActiveSection('register')
+    setActiveSection(null)
   }
 
   return (
@@ -781,6 +884,12 @@ function App() {
               {section.label}
             </button>
           ))}
+
+          {isRegistered && (
+            <button type="button" className="secondary-button" onClick={handleResetRegistration}>
+              Чыгуу
+            </button>
+          )}
         </div>
       </header>
 
@@ -810,6 +919,22 @@ function App() {
           </div>
         </section>
 
+        {!isRegistered && !activeSection && (
+          <section className="panel panel--narrow">
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">Катышуучу</p>
+                <h3 className="panel__title">Катталуу же кирүү тандаңыз</h3>
+              </div>
+              <div className="pill">Конок</div>
+            </div>
+
+            <div className="note-card">
+              Бул жерде форма автоматтык ачылбайт. Жогору жактагы `Катталуу` же `Кирүү` баскычын басыңыз.
+            </div>
+          </section>
+        )}
+
         {isRegistered && (
           <section className="player-status-board">
             <article className="player-status-card">
@@ -821,11 +946,19 @@ function App() {
               <strong>{playerDivisionLabel}</strong>
             </article>
             <article className="player-status-card">
+              <span className="player-status-card__label">Менин тамгам</span>
+              <strong>{selectedTargetMeta?.laneLetter || selectedPlayer?.laneLetter || '—'}</strong>
+            </article>
+            <article className="player-status-card">
               <span className="player-status-card__label">Журнал</span>
               <strong>{playerJournalStatusLabel}</strong>
             </article>
             <article className="player-status-card">
-              <span className="player-status-card__label">Менин плей-оффум</span>
+              <span className="player-status-card__label">Менин бутам</span>
+              <strong>{selectedTargetNumber ? `#${selectedTargetNumber}` : '-'}</strong>
+            </article>
+            <article className="player-status-card">
+              <span className="player-status-card__label">Менин торум</span>
               <strong>{playerPlayoffStatusLabel}</strong>
             </article>
           </section>
@@ -860,8 +993,24 @@ function App() {
                 />
               </label>
 
+              {false && <label className="field">
+                <span className="field__label">4 орундуу сырсөз</span>
+                <input
+                  name="password"
+                  className="field__control"
+                  value={registrationForm.password}
+                  onChange={handleRegistrationChange}
+                  inputMode="numeric"
+                  maxLength={4}
+                  autoComplete="one-time-code"
+                  placeholder="1234"
+                  disabled={Boolean(registeredPlayer)}
+                  required={false}
+                />
+              </label>}
+
               <label className="field">
-                <span className="field__label">Телефон номери</span>
+                <span className="field__label">Номер</span>
                 <input
                   name="phone"
                   className="field__control"
@@ -870,7 +1019,7 @@ function App() {
                   inputMode="numeric"
                   maxLength={10}
                   autoComplete="tel"
-                  placeholder="996"
+                  placeholder="0555123456"
                   disabled={Boolean(registeredPlayer)}
                   required
                 />
@@ -951,6 +1100,19 @@ function App() {
                   required
                 />
               </label>
+              {passwordProtectionEnabled && <label className="field field--full">
+                <span className="field__label">4 орундуу сырсөз</span>
+                <input
+                  name="password"
+                  className="field__control"
+                  value={loginForm.password}
+                  onChange={handleLoginChange}
+                  inputMode="numeric"
+                  maxLength={4}
+                  autoComplete="one-time-code"
+                  required={passwordProtectionEnabled}
+                />
+              </label>}
 
               <div className="note-card field--full">
                 Киргенден кийин жыйынтыкты, финалдык торду жана өз упайыңызды жөнөтүү бөлүмүн көрөсүз.
@@ -978,8 +1140,8 @@ function App() {
             <div className="rating-board">
               {ratingPlayers.length > 0 ? (
                 <div className="rating-sections">
-                  <RatingSection title="Эркек" players={maleRatingPlayers} emptyLabel="Эркек катышуучулар азырынча жок." prefix="male" />
-                  <RatingSection title="Аял" players={femaleRatingPlayers} emptyLabel="Аял катышуучулар азырынча жок." prefix="female" />
+                  <RatingSectionQualified title="Эркек" players={maleRatingPlayers} emptyLabel="Эркек катышуучулар азырынча жок." prefix="male" playoffMode={malePlayoffMode} />
+                  <RatingSectionQualified title="Аял" players={femaleRatingPlayers} emptyLabel="Аял катышуучулар азырынча жок." prefix="female" playoffMode={femalePlayoffMode} />
                   <div className="rating-list" style={{ display: 'none' }}>
                     {ratingPlayers.map((player, index) => (
                     <article
@@ -1122,7 +1284,17 @@ function App() {
             <div className="info-strip">
               <span>Упай дароо админ журналында көрүнөт.</span>
               <span>Кийинки раунд админ ачмайынча бул жерден башка раундга өтүү мүмкүн эмес.</span>
+              <span>Бул бетте сиздин мишенедеги гана 4 оюнчунун журналдагы упайлары корунот.</span>
             </div>
+
+            <TargetGroupPanel
+              selectedPlayerId={selectedPlayer?.id}
+              targetNumber={selectedTargetNumber}
+              players={selectedTargetGroup}
+              scores={tournamentState.scores}
+              activeRound={activeScoreRound}
+              targetMap={genderTargetMap}
+            />
 
             <form className="form-grid" onSubmit={handleScoreSubmit}>
               <label className="field field--full">
@@ -1131,7 +1303,6 @@ function App() {
               </label>
 
               <input type="hidden" name="playerId" value={scoreForm.playerId} readOnly />
-              <input type="hidden" name="phone" value={scoreForm.phone} readOnly />
 
               <label className="field">
                 <span className="field__label">Упай</span>
@@ -1165,6 +1336,71 @@ function App() {
         )}
       </main>
     </div>
+  )
+}
+
+const TargetGroupPanel = ({ selectedPlayerId, targetNumber, players, scores, activeRound, targetMap }) => {
+  if (!selectedPlayerId) {
+    return null
+  }
+
+  if (!players.length) {
+    return <div className="note-card">Сиздин бута боюнча топ азырынча табылган жок.</div>
+  }
+
+  return (
+    <section className="target-group-panel">
+      <div className="target-group-panel__header">
+        <div>
+          <p className="eyebrow">Бута журналы</p>
+          <h4 className="panel__title">Бута #{targetNumber}</h4>
+        </div>
+        <div className="pill">{players.length} оюнчу</div>
+      </div>
+
+      <div className="target-group-grid">
+        {players.map((player) => {
+          const total = calculateTotal(scores, player.id)
+          const isCurrentPlayer = player.id === selectedPlayerId
+          const targetMeta = targetMap?.[player.id]
+
+          return (
+            <article key={player.id} className={`target-player-card ${isCurrentPlayer ? 'target-player-card--current' : ''}`}>
+              <div className="target-player-card__header">
+                <div>
+                  <div className="target-player-card__name-row">
+                    <strong>{player.name}</strong>
+                    <span className="target-lane-badge">{targetMeta?.laneLetter || player.laneLetter || getLaneLetter(player.entryNumber)}</span>
+                  </div>
+                  <p className="target-player-card__meta">
+                    {getGenderLabel(player.gender)} | Бута #{targetMeta?.targetNumber || getTargetNumber(player.entryNumber)} | #{player.entryNumber}
+                  </p>
+                </div>
+                <div className="target-total-badge">Жалпы: {total}</div>
+              </div>
+
+              <div className="target-rounds-grid">
+                {QUALIFICATION_ROUNDS.map((round) => {
+                  const roundScore = getPlayerRoundScore(scores, player.id, round)
+                  const hasScore = roundScore !== '' && roundScore !== null && roundScore !== undefined
+
+                  return (
+                    <div
+                      key={`${player.id}-round-${round}`}
+                      className={`target-round-chip ${round === activeRound ? 'target-round-chip--active' : ''} ${hasScore ? 'target-round-chip--filled' : 'target-round-chip--empty'}`}
+                    >
+                      <span className="target-round-chip__round">A{round}</span>
+                      <strong>{hasScore ? roundScore : '-'}</strong>
+                      <span className="target-round-chip__status">{hasScore ? 'Жазылды' : 'Жок'}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -1364,6 +1600,62 @@ const RatingSection = ({ title, players, emptyLabel, prefix }) => (
     )}
   </div>
 )
+
+const RatingSectionQualified = ({ title, players, emptyLabel, prefix, playoffMode }) => {
+  const playoffCount = Math.min(players.length, playoffMode)
+
+  return (
+    <div className="rating-group">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Бөлүм</p>
+          <h4 className="panel__title">{title}</h4>
+        </div>
+        <div className="pill">Топ-{playoffMode}</div>
+      </div>
+
+      {players.length > 0 ? (
+        <>
+          <div className="rating-summary-strip">
+            <span className="rating-summary-strip__item">
+              Өтүү чеги: <strong>Топ-{playoffMode}</strong>
+            </span>
+            <span className="rating-summary-strip__item">
+              Өтүп жаткандар: <strong>{playoffCount}</strong> / {players.length}
+            </span>
+          </div>
+
+          <div className="rating-list">
+            {players.map((player, index) => {
+              const isQualified = index < playoffMode
+
+              return (
+                <article
+                  key={`${prefix}-${player.id}`}
+                  className={`rating-entry ${isQualified ? 'rating-entry--qualified' : 'rating-entry--waiting'}`}
+                >
+                  <div className="rating-entry__place">{index + 1}</div>
+                  <div className="rating-entry__content">
+                    <h4>{player.name}</h4>
+                    <p>{isQualified ? 'Торго кирет' : 'Азырынча өтпөйт'}</p>
+                  </div>
+                  <div className="rating-entry__result">
+                    <span className={`rating-status-pill ${isQualified ? 'rating-status-pill--in' : 'rating-status-pill--out'}`}>
+                      {isQualified ? 'Өтөт' : 'Өтпөйт'}
+                    </span>
+                    <strong>{player.total}</strong>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="empty-state">{emptyLabel}</div>
+      )}
+    </div>
+  )
+}
 
 export default App
 

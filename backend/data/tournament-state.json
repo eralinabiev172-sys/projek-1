@@ -2,43 +2,446 @@
   "tournamentName": "Жаа атуу боюнча турнир",
   "location": "Чолпон-Ата, 2026-жыл",
   "category": "Классикалык жаа, 50 метр, эркектер",
+  "playoffDivision": "all",
   "headReferee": "",
   "headSecretary": "",
   "players": [
     {
-      "id": "1777870797665-2t1475",
-      "name": "wferfwefrg",
-      "phone": "12442355",
+      "id": "1778392086442-4ckq68",
+      "name": "эрали набиев",
+      "phone": "0509071248",
+      "password": "1234",
       "gender": "male",
-      "entryNumber": 1
+      "entryNumber": 1,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778406232800-hjjcwl",
+      "name": "tewtew",
+      "phone": "",
+      "password": "3463",
+      "gender": "male",
+      "entryNumber": 2,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778406241449-47itmk",
+      "name": "sdgsdgsg",
+      "phone": "",
+      "password": "3453",
+      "gender": "male",
+      "entryNumber": 3,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778406250291-phdix4",
+      "name": "eggfhtrh",
+      "phone": "",
+      "password": "2432",
+      "gender": "male",
+      "entryNumber": 4,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778412645960-an8gbn",
+      "name": "frrgergerg",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 5,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778412777232-wcrkyl",
+      "name": "egeg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 6,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778412782635-jqgjiw",
+      "name": "eewgwg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 7,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778412787030-ab4t4g",
+      "name": "egegeg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 8,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778412791341-noiou4",
+      "name": "egewgweg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 9,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778412796244-9dtcbk",
+      "name": "gwgrg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 10,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778414687199-zkjqmq",
+      "name": "цауца",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 11,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778414688325-4f90wn",
+      "name": "упукпк",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 12,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778414688879-i8ch2r",
+      "name": "укпкуп",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 13,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778414689774-qboha3",
+      "name": "кпкуп",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 14,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778414696323-txemgl",
+      "name": "кпкупп",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 15,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778414697661-xny6fv",
+      "name": "упкрн",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 16,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778414698617-gcoxrr",
+      "name": "еоон",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 17,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778414699454-1qlp85",
+      "name": "керур",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 18,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778414700300-xayra0",
+      "name": "гого",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 19,
+      "laneLetter": "C"
     }
   ],
-  "scores": {},
-  "bracket": {
-    "roundOf32": [],
-    "roundOf16": [],
-    "quarterFinals": [],
-    "semiFinals": [],
-    "final12": null,
-    "final34": null,
-    "winners": []
+  "scores": {
+    "1778392086442-4ckq68": {
+      "1": 9
+    }
   },
-  "playoffStage": "none",
-  "playoffMode": 16,
+  "competitionDivisions": {
+    "all": {
+      "playoffMode": 16,
+      "playoffStage": "none",
+      "playoffFinalRounds": {
+        "final12": 1,
+        "final34": 1
+      },
+      "bracket": {
+        "roundOf32": [],
+        "roundOf16": [],
+        "quarterFinals": [],
+        "semiFinals": [],
+        "final12": null,
+        "final34": null,
+        "winners": []
+      }
+    },
+    "male": {
+      "playoffMode": 8,
+      "playoffStage": "none",
+      "playoffFinalRounds": {
+        "final12": 1,
+        "final34": 1
+      },
+      "bracket": {
+        "roundOf32": [],
+        "roundOf16": [],
+        "quarterFinals": [],
+        "semiFinals": [],
+        "final12": null,
+        "final34": null,
+        "winners": []
+      }
+    },
+    "female": {
+      "playoffMode": 16,
+      "playoffStage": "none",
+      "playoffFinalRounds": {
+        "final12": 1,
+        "final34": 1
+      },
+      "bracket": {
+        "roundOf32": [],
+        "roundOf16": [],
+        "quarterFinals": [],
+        "semiFinals": [],
+        "final12": null,
+        "final34": null,
+        "winners": []
+      }
+    }
+  },
   "playerNumberBook": {
-    "wferfwefrg": 1
+    "эрали набиев": 1,
+    "tewtew": 2,
+    "sdgsdgsg": 3,
+    "eggfhtrh": 4,
+    "frrgergerg": 5,
+    "egeg": 6,
+    "eewgwg": 7,
+    "egegeg": 8,
+    "egewgweg": 9,
+    "gwgrg": 10,
+    "цауца": 11,
+    "упукпк": 12,
+    "укпкуп": 13,
+    "кпкуп": 14,
+    "кпкупп": 15,
+    "упкрн": 16,
+    "еоон": 17,
+    "керур": 18,
+    "гого": 19
   },
   "scoreSubmission": {
     "activeRound": 1,
-    "entries": []
+    "entries": [
+      {
+        "id": "1778406146601-tx8tmc",
+        "playerId": "1778392086442-4ckq68",
+        "playerName": "эрали набиев",
+        "round": 1,
+        "score": 9,
+        "submittedAt": "2026-05-10T09:42:26.601Z"
+      }
+    ]
   },
+  "passwordProtectionEnabled": false,
   "playerDirectory": [
     {
-      "id": "1777870797665-2t1475",
-      "name": "wferfwefrg",
-      "phone": "12442355",
+      "id": "1778392086442-4ckq68",
+      "name": "эрали набиев",
+      "phone": "0509071248",
+      "password": "1234",
       "gender": "male",
-      "entryNumber": 1
+      "entryNumber": 1,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778406232800-hjjcwl",
+      "name": "tewtew",
+      "phone": "",
+      "password": "3463",
+      "gender": "male",
+      "entryNumber": 2,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778406241449-47itmk",
+      "name": "sdgsdgsg",
+      "phone": "",
+      "password": "3453",
+      "gender": "male",
+      "entryNumber": 3,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778406250291-phdix4",
+      "name": "eggfhtrh",
+      "phone": "",
+      "password": "2432",
+      "gender": "male",
+      "entryNumber": 4,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778412645960-an8gbn",
+      "name": "frrgergerg",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 5,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778412777232-wcrkyl",
+      "name": "egeg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 6,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778412782635-jqgjiw",
+      "name": "eewgwg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 7,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778412787030-ab4t4g",
+      "name": "egegeg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 8,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778412791341-noiou4",
+      "name": "egewgweg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 9,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778412796244-9dtcbk",
+      "name": "gwgrg",
+      "phone": "",
+      "password": "",
+      "gender": "female",
+      "entryNumber": 10,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778414687199-zkjqmq",
+      "name": "цауца",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 11,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778414688325-4f90wn",
+      "name": "упукпк",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 12,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778414688879-i8ch2r",
+      "name": "укпкуп",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 13,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778414689774-qboha3",
+      "name": "кпкуп",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 14,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778414696323-txemgl",
+      "name": "кпкупп",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 15,
+      "laneLetter": "C"
+    },
+    {
+      "id": "1778414697661-xny6fv",
+      "name": "упкрн",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 16,
+      "laneLetter": "D"
+    },
+    {
+      "id": "1778414698617-gcoxrr",
+      "name": "еоон",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 17,
+      "laneLetter": "A"
+    },
+    {
+      "id": "1778414699454-1qlp85",
+      "name": "керур",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 18,
+      "laneLetter": "B"
+    },
+    {
+      "id": "1778414700300-xayra0",
+      "name": "гого",
+      "phone": "",
+      "password": "",
+      "gender": "male",
+      "entryNumber": 19,
+      "laneLetter": "C"
     }
   ],
   "rounds": [

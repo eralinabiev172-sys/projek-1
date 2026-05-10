@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_ANON_KEY
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 const MAX_PLAYER_SCORE = 30
 
 const EMPTY_BRACKET = {
@@ -23,6 +23,7 @@ const SCORE_SUBMISSION_META_KEY = '__scoreSubmission'
 const PLAYOFF_DIVISION_META_KEY = '__playoffDivision'
 const PLAYOFF_FINAL_ROUNDS_META_KEY = '__playoffFinalRounds'
 const COMPETITION_DIVISIONS_META_KEY = '__competitionDivisions'
+const PASSWORD_PROTECTION_META_KEY = '__passwordProtectionEnabled'
 const PLAYOFF_SUBMISSION_STAGES = ['roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final']
 
 function createEmptyBracket() {
@@ -48,6 +49,7 @@ function createEmptyCompetitionState() {
 
 function createDefaultCompetitionDivisions() {
   return {
+    all: createEmptyCompetitionState(),
     male: createEmptyCompetitionState(),
     female: createEmptyCompetitionState(),
   }
@@ -91,12 +93,18 @@ const normalizeCompetitionDivisions = (value, legacy = {}) => {
 
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return {
+      all: normalizeCompetitionState(value.all),
       male: normalizeCompetitionState(value.male),
       female: normalizeCompetitionState(value.female),
     }
   }
 
-  const legacyDivision = legacy.playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivision =
+    legacy.playoffDivision === 'female'
+      ? 'female'
+      : legacy.playoffDivision === 'male'
+        ? 'male'
+        : 'all'
   if (hasBracketData(legacy.bracket) || legacy.playoffStage !== 'none') {
     defaults[legacyDivision] = normalizeCompetitionState({
       playoffMode: legacy.playoffMode,
@@ -119,6 +127,7 @@ const extractPlayerNumberBook = (value) => {
   delete nextBook[PLAYOFF_DIVISION_META_KEY]
   delete nextBook[PLAYOFF_FINAL_ROUNDS_META_KEY]
   delete nextBook[COMPETITION_DIVISIONS_META_KEY]
+  delete nextBook[PASSWORD_PROTECTION_META_KEY]
   return nextBook
 }
 
@@ -139,24 +148,29 @@ const readStoredCompetitionDivisions = (dbRow) =>
     playoffFinalRounds: readStoredPlayoffFinalRounds(dbRow),
   })
 
+const readStoredPasswordProtectionEnabled = (dbRow) =>
+  normalizePasswordProtectionEnabled(dbRow.player_number_book?.[PASSWORD_PROTECTION_META_KEY])
+
 const writeStoredPlayerNumberBook = (
   playerNumberBook,
   scoreSubmission,
   playoffDivision,
   playoffFinalRounds,
   competitionDivisions,
+  passwordProtectionEnabled,
 ) => ({
   ...(playerNumberBook || {}),
   [SCORE_SUBMISSION_META_KEY]: normalizeScoreSubmission(scoreSubmission),
   [PLAYOFF_DIVISION_META_KEY]: normalizePlayoffDivision(playoffDivision),
   [PLAYOFF_FINAL_ROUNDS_META_KEY]: normalizePlayoffFinalRounds(playoffFinalRounds),
   [COMPETITION_DIVISIONS_META_KEY]: normalizeCompetitionDivisions(competitionDivisions),
+  [PASSWORD_PROTECTION_META_KEY]: normalizePasswordProtectionEnabled(passwordProtectionEnabled),
 })
 
 const dbToJs = (dbRow) => {
   const playoffDivision = readStoredPlayoffDivision(dbRow)
   const competitionDivisions = readStoredCompetitionDivisions(dbRow)
-  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : playoffDivision === 'male' ? 'male' : 'all'
   const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
 
   return {
@@ -168,6 +182,7 @@ const dbToJs = (dbRow) => {
     playoffStage: legacyDivisionState.playoffStage,
     playoffMode: legacyDivisionState.playoffMode,
     competitionDivisions,
+    passwordProtectionEnabled: readStoredPasswordProtectionEnabled(dbRow),
     playerNumberBook: extractPlayerNumberBook(dbRow.player_number_book),
     scoreSubmission: readStoredScoreSubmission(dbRow),
   }
@@ -176,7 +191,7 @@ const dbToJs = (dbRow) => {
 const jsToDb = (jsState) => {
   const playoffDivision = normalizePlayoffDivision(jsState.playoffDivision)
   const competitionDivisions = normalizeCompetitionDivisions(jsState.competitionDivisions, jsState)
-  const legacyDivisionId = playoffDivision === 'female' ? 'female' : 'male'
+  const legacyDivisionId = playoffDivision === 'female' ? 'female' : playoffDivision === 'male' ? 'male' : 'all'
   const legacyDivisionState = competitionDivisions[legacyDivisionId] || createEmptyCompetitionState()
 
   return {
@@ -189,12 +204,15 @@ const jsToDb = (jsState) => {
       playoffDivision,
       legacyDivisionState.playoffFinalRounds,
       competitionDivisions,
+      jsState.passwordProtectionEnabled,
     ),
   }
 }
 
-const sanitizePhone = (value) => String(value || '').replace(/\D/g, '').slice(0, 10)
-const isValidPhone = (value) => !value || /^\d{1,10}$/.test(value)
+const sanitizePassword = (value) => String(value || '').replace(/\D/g, '').slice(0, 4)
+const isValidPassword = (value) => /^\d{4}$/.test(value)
+const DEFAULT_PASSWORD_PROTECTION_ENABLED = false
+const normalizePasswordProtectionEnabled = (value) => (typeof value === 'boolean' ? value : DEFAULT_PASSWORD_PROTECTION_ENABLED)
 const isValidScoreValue = (value) => Number.isInteger(value) && value >= 0 && value <= MAX_PLAYER_SCORE
 const isScoreInputDigitsOnly = (value) => /^\d{1,3}$/.test(String(value || '').trim())
 
@@ -255,20 +273,16 @@ export default async function handler(req, res) {
 
   try {
     const playerId = String(req.body?.playerId || '').trim()
-    const phone = sanitizePhone(req.body?.phone)
+    const password = sanitizePassword(req.body?.password)
     const rawScore = String(req.body?.score || '').trim()
     const score = Number.parseInt(rawScore, 10)
 
     if (!playerId) {
-      return res.status(400).json({ error: 'Р С›РЎР‹Р Р…РЎвЂЎРЎС“ РЎвЂљР В°Р Р…Р Т‘Р В°Р В»Р С–Р В°Р Р… Р В¶Р С•Р С”.' })
-    }
-
-    if (!phone || !isValidPhone(phone)) {
-      return res.status(400).json({ error: 'Р СћР ВµР В»Р ВµРЎвЂћР С•Р Р… Р Р…Р С•Р СР ВµРЎР‚Р С‘ РЎвЂљРЎС“РЎС“РЎР‚Р В° РЎРЊР СР ВµРЎРѓ.' })
+      return res.status(400).json({ error: 'Player is required.' })
     }
 
     if (!isScoreInputDigitsOnly(rawScore) || !isValidScoreValue(score)) {
-      return res.status(400).json({ error: `Р Р€Р С—Р В°Р в„– 0Р Т‘РЈВ©Р Р… ${MAX_PLAYER_SCORE}Р С–Р В° РЎвЂЎР ВµР в„–Р С‘Р Р…Р С”Р С‘ РЎРѓР В°Р Р… Р В±Р С•Р В»РЎС“РЎв‚¬РЎС“ Р С”Р ВµРЎР‚Р ВµР С”.` })
+      return res.status(400).json({ error: `Score must be between 0 and ${MAX_PLAYER_SCORE}.` })
     }
 
     const { data: currentData, error: fetchError } = await supabase
@@ -282,14 +296,19 @@ export default async function handler(req, res) {
     }
 
     const currentState = dbToJs(currentData)
+    const passwordProtectionEnabled = false
     const player = currentState.players.find((item) => item.id === playerId)
 
     if (!player) {
-      return res.status(400).json({ error: 'Р С›РЎР‹Р Р…РЎвЂЎРЎС“ РЎвЂљР В°Р В±РЎвЂ№Р В»Р С–Р В°Р Р… Р В¶Р С•Р С”.' })
+      return res.status(400).json({ error: 'Player not found.' })
     }
 
-    if (sanitizePhone(player.phone) !== phone) {
-      return res.status(400).json({ error: 'Р СћР ВµР В»Р ВµРЎвЂћР С•Р Р… Р Р…Р С•Р СР ВµРЎР‚Р С‘ Р Т‘Р В°Р В» Р С”Р ВµР В»Р С–Р ВµР Р… Р В¶Р С•Р С”.' })
+    if (passwordProtectionEnabled && (!password || !isValidPassword(password))) {
+      return res.status(400).json({ error: 'Password must be exactly 4 digits.' })
+    }
+
+    if (passwordProtectionEnabled && sanitizePassword(player.password) !== password) {
+      return res.status(400).json({ error: 'Incorrect 4-digit password.' })
     }
 
     const divisionId = player.gender === 'female' ? 'female' : 'male'
@@ -297,7 +316,7 @@ export default async function handler(req, res) {
     const activeMatch = findActivePlayoffMatch(divisionState.bracket, divisionState.playoffStage, playerId)
 
     if (!activeMatch) {
-      return res.status(400).json({ error: 'РЎРёР· ТЇС‡ТЇРЅ Р°С‡С‹Рє РїР»РµР№-РѕС„С„ Р±РµС‚С‚РµС€ С‚Р°Р±С‹Р»РіР°РЅ Р¶РѕРє.' })
+      return res.status(400).json({ error: 'No active playoff match found for this player.' })
     }
 
     const isPlayerOne = activeMatch?.p1?.id === playerId
@@ -320,7 +339,7 @@ export default async function handler(req, res) {
       const roundsKey = isPlayerOne ? 'roundsP1' : 'roundsP2'
 
       if (updatedMatch[submittedRoundsKey][activeRound - 1]) {
-        return res.status(409).json({ error: 'Р‘СѓР» С„РёРЅР°Р» Р°Р№Р»Р°РјРїР°СЃС‹ ТЇС‡ТЇРЅ СѓРїР°Р№ РјСѓСЂСѓРЅС‚Р°РЅ СЌР»Рµ Р¶У©РЅУ©С‚ТЇР»РіУ©РЅ.' })
+        return res.status(409).json({ error: 'Final round score is already locked.' })
       }
 
       updatedMatch[roundsKey][activeRound - 1] = score
@@ -357,7 +376,7 @@ export default async function handler(req, res) {
         : isPlayerOne ? 'submittedP1' : 'submittedP2'
 
       if (updatedMatch[submissionKey]) {
-        return res.status(409).json({ error: 'Р‘СѓР» РїР»РµР№-РѕС„С„ Р±РµС‚С‚РµС€ ТЇС‡ТЇРЅ СѓРїР°Р№ РјСѓСЂСѓРЅС‚Р°РЅ СЌР»Рµ Р¶У©РЅУ©С‚ТЇР»РіУ©РЅ.' })
+        return res.status(409).json({ error: 'Playoff score is already locked.' })
       }
 
       if (useShootOff) {

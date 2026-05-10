@@ -21,6 +21,7 @@ const DEFAULT_SCORE_SUBMISSION = {
   activeRound: 1,
   entries: [],
 };
+const DEFAULT_PASSWORD_PROTECTION_ENABLED = false;
 
 const DEFAULT_PLAYOFF_FINAL_ROUND = 1;
 const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
@@ -28,10 +29,11 @@ const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
   final34: DEFAULT_PLAYOFF_FINAL_ROUND,
 };
 const COMPETITION_DIVISIONS = [
+  { id: 'all', label: 'Баары' },
   { id: 'male', label: 'Эркек' },
   { id: 'female', label: 'Аял' },
 ];
-const DEFAULT_COMPETITION_DIVISION = 'male';
+const DEFAULT_COMPETITION_DIVISION = 'all';
 
 function createEmptyBracket() {
   return {
@@ -56,15 +58,16 @@ function createEmptyCompetitionState() {
 
 function createDefaultCompetitionDivisions() {
   return {
+    all: createEmptyCompetitionState(),
     male: createEmptyCompetitionState(),
     female: createEmptyCompetitionState(),
   };
 }
 
 const DEFAULT_STATE = {
-  tournamentName: 'Жаа атуу боюнча турнир',
+  tournamentName: 'Жаа атуу боюнча мелдеш',
   location: 'Чолпон-Ата, 2026-жыл',
-  category: 'Классикалык жаа, 50 метр, эркектер',
+  category: 'Салттуу жаа, 50 метр, эркектер',
   playoffDivision: 'all',
   headReferee: '',
   headSecretary: '',
@@ -74,6 +77,7 @@ const DEFAULT_STATE = {
   competitionDivisions: createDefaultCompetitionDivisions(),
   playerNumberBook: {},
   scoreSubmission: DEFAULT_SCORE_SUBMISSION,
+  passwordProtectionEnabled: DEFAULT_PASSWORD_PROTECTION_ENABLED,
 };
 
 const seedOrders = {
@@ -93,10 +97,10 @@ const playoffStageKeysByMode = {
 const tabs = [
   { id: 'players', label: 'Жөндөөлөр' },
   { id: 'playerData', label: 'Оюнчулар' },
-  { id: 'journal', label: 'Журнал' },
-  { id: 'rating', label: 'Рейтинг' },
-  { id: 'playoff', label: 'Плей-офф' },
-  { id: 'report', label: 'Отчёт' },
+  { id: 'journal', label: 'Тандоо элек' },
+  { id: 'rating', label: 'Даража' },
+  { id: 'playoff', label: 'Жеке элек' },
+  { id: 'report', label: 'Баяндама' },
 ];
 
 const stageMeta = {
@@ -117,6 +121,11 @@ const playoffStageTitles = {
 };
 
 const PLAYOFF_DIVISIONS = [
+  { id: 'all', label: 'Баары' },
+  { id: 'male', label: 'Эркек' },
+  { id: 'female', label: 'Аял' },
+];
+const PARTICIPANT_FILTERS = [
   { id: 'all', label: 'Баары' },
   { id: 'male', label: 'Эркек' },
   { id: 'female', label: 'Аял' },
@@ -145,6 +154,9 @@ const createMatch = (id, p1, p2, isFinal = false) => ({
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase();
 const sanitizePlayerText = (value) => String(value ?? '').replace(/\s{2,}/g, ' ').trimStart();
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 10);
+const sanitizePassword = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 4);
+const LETTER_SEQUENCE = ['A', 'B', 'C', 'D'];
+const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length];
 const sanitizeNonNegativeNumber = (value, maxLength = 2) => {
   const digitsOnly = String(value ?? '').replace(/[^\d]/g, '').slice(0, maxLength);
   if (!digitsOnly) {
@@ -159,6 +171,8 @@ const normalizePlayoffFinalRounds = (value) => ({
   final12: ROUNDS.includes(Number(value?.final12)) ? Number(value.final12) : DEFAULT_PLAYOFF_FINAL_ROUND,
   final34: ROUNDS.includes(Number(value?.final34)) ? Number(value.final34) : DEFAULT_PLAYOFF_FINAL_ROUND,
 });
+const normalizePasswordProtectionEnabled = (value) => (typeof value === 'boolean' ? value : DEFAULT_PASSWORD_PROTECTION_ENABLED);
+const isValidPassword = (value) => /^\d{4}$/.test(String(value ?? '').trim());
 const isStandardPlayoffShootOffActive = (match) =>
   Boolean(match && !match.isFinal && Number(match.s1) === Number(match.s2) && (match.submittedP1 || match.submittedP2 || match.submittedShootOffP1 || match.submittedShootOffP2));
 
@@ -176,12 +190,18 @@ const normalizeCompetitionDivisions = (value, legacyState = {}) => {
 
   if (value && typeof value === 'object') {
     return {
+      all: normalizeCompetitionState(value.all),
       male: normalizeCompetitionState(value.male),
       female: normalizeCompetitionState(value.female),
     };
   }
 
-  const legacyDivision = legacyState.playoffDivision === 'female' ? 'female' : 'male';
+  const legacyDivision =
+    legacyState.playoffDivision === 'female'
+      ? 'female'
+      : legacyState.playoffDivision === 'male'
+        ? 'male'
+        : 'all';
   const hasLegacyBracket =
     legacyState.bracket &&
     !isEmptyBracket({ ...EMPTY_BRACKET, ...legacyState.bracket });
@@ -249,6 +269,7 @@ const normalizeStoredPlayers = (players, savedBook = {}) => {
       phone: player.phone ?? '',
       gender: player.gender ?? '',
       entryNumber: player.entryNumber ?? fallbackNumber,
+      laneLetter: player.laneLetter || getLaneLetter(player.entryNumber ?? fallbackNumber),
     };
   });
 };
@@ -260,6 +281,7 @@ const normalizePlayerDirectory = (players) =>
       phone: player.phone ?? '',
       gender: player.gender ?? '',
       entryNumber: player.entryNumber ?? index + 1,
+      laneLetter: player.laneLetter || getLaneLetter(player.entryNumber ?? index + 1),
     })),
   );
 
@@ -318,6 +340,7 @@ const parseStoredState = (raw) => {
     ...DEFAULT_STATE,
     ...parsed,
     playoffDivision: normalizePlayoffDivision(parsed.playoffDivision),
+    passwordProtectionEnabled: normalizePasswordProtectionEnabled(parsed.passwordProtectionEnabled),
     players: normalizedPlayers,
     playerDirectory: normalizePlayerDirectory(parsed.playerDirectory || parsed.players || []),
     playerNumberBook,
@@ -629,10 +652,13 @@ const App = () => {
   const [scores, setScores] = useState(initialState.scores);
   const [scoreSubmission, setScoreSubmission] = useState(initialState.scoreSubmission || DEFAULT_SCORE_SUBMISSION);
   const [competitionDivisions, setCompetitionDivisions] = useState(initialState.competitionDivisions || createDefaultCompetitionDivisions());
+  const [passwordProtectionEnabled] = useState(false);
   const [activeTab, setActiveTab] = useState('players');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerGender, setNewPlayerGender] = useState('male');
+  const [participantsSearchQuery, setParticipantsSearchQuery] = useState('');
+  const [participantsFilter, setParticipantsFilter] = useState('all');
   const [playerSearchQuery, setPlayerSearchQuery] = useState('');
   const [journalSearchQuery, setJournalSearchQuery] = useState('');
   const [editingPlayerId, setEditingPlayerId] = useState(null);
@@ -683,6 +709,7 @@ const App = () => {
       scores,
       scoreSubmission,
       competitionDivisions,
+      passwordProtectionEnabled,
       rounds: ROUNDS,
     };
 
@@ -699,7 +726,8 @@ const App = () => {
       Object.keys(scores).length === 0 &&
       scoreSubmission.activeRound === DEFAULT_SCORE_SUBMISSION.activeRound &&
       scoreSubmission.entries.length === 0 &&
-      isCompetitionDivisionsPristine(competitionDivisions);
+      isCompetitionDivisionsPristine(competitionDivisions) &&
+      passwordProtectionEnabled === DEFAULT_PASSWORD_PROTECTION_ENABLED;
 
     if (isPristine) {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -735,7 +763,7 @@ const App = () => {
           setApiNotice(error.message);
         }
       });
-  }, [tournamentName, location, category, playoffDivision, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, competitionDivisions]);
+  }, [tournamentName, location, category, playoffDivision, headReferee, headSecretary, players, playerDirectory, playerNumberBook, scores, scoreSubmission, competitionDivisions, passwordProtectionEnabled]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -861,23 +889,40 @@ const App = () => {
   const orderedPlayers = sortPlayersByEntryNumber(players);
   const malePlayers = orderedPlayers.filter((player) => player.gender === 'male');
   const femalePlayers = orderedPlayers.filter((player) => player.gender === 'female');
-  const filteredOrderedPlayers = orderedPlayers.filter((player) => player.gender === viewDivision);
+  const filteredOrderedPlayers = orderedPlayers.filter((player) => viewDivision === 'all' || player.gender === viewDivision);
   const rankedPlayers = [...players].sort((a, b) => calculateTotal(b.id) - calculateTotal(a.id));
-  const filteredRankedPlayers = rankedPlayers.filter((player) => player.gender === viewDivision);
+  const filteredRankedPlayers = rankedPlayers.filter((player) => viewDivision === 'all' || player.gender === viewDivision);
   const playoffEligiblePlayers = filteredRankedPlayers;
   const journalSheetLayout = getJournalSheetLayout(filteredOrderedPlayers.length);
   const bracketStagesForSheet = getBracketStagesForSheet(bracket, playoffMode);
   const scoreSubmissionEntries = (scoreSubmission.entries || []).filter((entry) => {
     const player = players.find((item) => item.id === entry.playerId);
-    return player ? player.gender === viewDivision : false;
+    return player ? viewDivision === 'all' || player.gender === viewDivision : false;
   });
   const visibleStageKeys = getVisibleStageKeys(playoffMode);
   const playersPreviewCount = 3;
-  const visiblePlayers = isPlayersListExpanded ? orderedPlayers : orderedPlayers.slice(0, playersPreviewCount);
-  const hiddenPlayersCount = Math.max(orderedPlayers.length - playersPreviewCount, 0);
   const playerPositionMap = Object.fromEntries(orderedPlayers.map((player, index) => [player.id, index + 1]));
+  const normalizedParticipantsSearchQuery = participantsSearchQuery.trim().toLocaleLowerCase();
   const normalizedPlayerSearchQuery = playerSearchQuery.trim().toLocaleLowerCase();
   const normalizedJournalSearchQuery = journalSearchQuery.trim().toLocaleLowerCase();
+  const filteredParticipants = orderedPlayers.filter((player) => {
+    if (participantsFilter !== 'all' && player.gender !== participantsFilter) {
+      return false;
+    }
+
+    if (!normalizedParticipantsSearchQuery) {
+      return true;
+    }
+
+    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'аял' : '';
+
+    return [player.name || '', player.phone || '', genderLabel]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(normalizedParticipantsSearchQuery);
+  });
+  const visiblePlayers = isPlayersListExpanded ? filteredParticipants : filteredParticipants.slice(0, playersPreviewCount);
+  const hiddenPlayersCount = Math.max(filteredParticipants.length - playersPreviewCount, 0);
   const filteredPlayerData = playerDirectory.filter((player) => {
     if (!matchesPlayoffDivision(player, playoffDivision)) {
       return false;
@@ -909,21 +954,21 @@ const App = () => {
   const malePlayersCount = filteredPlayerData.filter((player) => player.gender === 'male').length;
   const femalePlayersCount = filteredPlayerData.filter((player) => player.gender === 'female').length;
   const divisionOverview = COMPETITION_DIVISIONS.map((division) => {
-    const divisionPlayers = orderedPlayers.filter((player) => player.gender === division.id);
-    const divisionRanked = rankedPlayers.filter((player) => player.gender === division.id);
+    const divisionPlayers = orderedPlayers.filter((player) => division.id === 'all' || player.gender === division.id);
+    const divisionRanked = rankedPlayers.filter((player) => division.id === 'all' || player.gender === division.id);
     const divisionState = competitionDivisions[division.id] || createEmptyCompetitionState();
 
     return {
       ...division,
       playersCount: divisionPlayers.length,
       playoffCount: Math.min(divisionRanked.length, divisionState.playoffMode),
-      stageLabel: stageMeta[divisionState.playoffStage]?.label || 'Квалификация',
+      stageLabel: stageMeta[divisionState.playoffStage]?.label || 'Тандоо',
       stageShort: stageMeta[divisionState.playoffStage]?.short || 'Журнал',
       topLabel: divisionRanked[0]?.name || 'Азырынча жок',
       isActive: viewDivision === division.id,
     };
   });
-  const activeDivisionLabel = COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Эркек';
+  const activeDivisionLabel = COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Баары';
   const playoffStages = visibleStageKeys.map((stageKey) => ({
     stageKey,
     title: playoffStageTitles[stageKey] || stageMeta[stageKey].label,
@@ -943,7 +988,6 @@ const App = () => {
     const name = newPlayerName.trim();
     if (!name) return;
     const phone = sanitizePhone(newPlayerPhone.trim());
-
     try {
       // Отправляем данные на сервер
       const nextState = parseStoredState(JSON.stringify(await registerTournamentPlayer({
@@ -985,6 +1029,7 @@ const App = () => {
           phone,
           gender: newPlayerGender,
           entryNumber,
+          laneLetter: getLaneLetter(entryNumber),
         };
 
         lastLocalMutationAtRef.current = Date.now();
@@ -1363,6 +1408,8 @@ const App = () => {
     setNewPlayerName('');
     setNewPlayerPhone('');
     setNewPlayerGender('male');
+    setParticipantsSearchQuery('');
+    setParticipantsFilter('all');
     setPlayerSearchQuery('');
     setIsMenuOpen(false);
     setIsPlayersListExpanded(false);
@@ -1530,6 +1577,26 @@ const App = () => {
                   </div>
                 </div>
 
+                {false && <div className="field">
+                  <span className="field__label">Кирүү коргоосу</span>
+                  <div className="mode-switch">
+                    <button
+                      type="button"
+                      onClick={() => setPasswordProtectionEnabled(false)}
+                      className={`mode-switch__button ${!passwordProtectionEnabled ? 'mode-switch__button--active' : ''}`}
+                    >
+                      Пароль өчүк
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPasswordProtectionEnabled(true)}
+                      className={`mode-switch__button ${passwordProtectionEnabled ? 'mode-switch__button--active' : ''}`}
+                    >
+                      Пароль күйүк
+                    </button>
+                  </div>
+                </div>}
+
                 <div className="field-row field-row--accent">
                   <label className="field">
                     <span className="field__label">Башкы калыс</span>
@@ -1578,6 +1645,17 @@ const App = () => {
                       if (event.key === 'Enter') addPlayer();
                     }}
                   />
+                  {false && <input
+                    className="field__control"
+                    placeholder={passwordProtectionEnabled ? '4 орундуу пароль' : '4 орундуу пароль (милдеттүү эмес)'}
+                    value=""
+                    onChange={() => {}}
+                    inputMode="numeric"
+                    maxLength={4}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') addPlayer();
+                    }}
+                  />}
                 </div>
 
                 <div className="add-player-actions">
@@ -1611,8 +1689,34 @@ const App = () => {
                 </div>
               </div>
 
+              <div className="player-search">
+                <input
+                  className="field__control"
+                  placeholder="Катышуучуну издөө: аты, телефон же жынысы"
+                  value={participantsSearchQuery}
+                  onChange={(event) => setParticipantsSearchQuery(event.target.value)}
+                />
+              </div>
+
+              <div className="mode-switch">
+                {PARTICIPANT_FILTERS.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    className={`mode-switch__button ${participantsFilter === filter.id ? 'mode-switch__button--active' : ''}`}
+                    onClick={() => setParticipantsFilter(filter.id)}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="players-list">
-                {orderedPlayers.length === 0 && <div className="empty-state">Азырынча катышуучулар кошула элек.</div>}
+                {filteredParticipants.length === 0 && (
+                  <div className="empty-state">
+                    {orderedPlayers.length === 0 ? 'Азырынча катышуучулар кошула элек.' : 'Мындай катышуучу табылган жок.'}
+                  </div>
+                )}
 
                 {visiblePlayers.map((player, index) => (
                   <article key={player.id} className="player-card">
@@ -1620,6 +1724,7 @@ const App = () => {
                       <p className="player-card__index">№ {playerPositionMap[player.id] ?? index + 1}</p>
                       <h4 className="player-card__name">{player.name}</h4>
                       <p className="player-card__meta">{player.phone || 'Телефон кошула элек'}</p>
+                      <p className="player-card__meta">Бөлмө тамгасы: {player.laneLetter || '—'}</p>
                       <p className="player-card__meta">
                         {player.gender === 'male' ? 'Эркек' : player.gender === 'female' ? 'Аял' : 'Жынысы кошула элек'}
                       </p>
@@ -1651,7 +1756,7 @@ const App = () => {
             <div className="panel">
               <div className="panel__header panel__header--stack">
                 <div>
-                    <p className="eyebrow">Квалификация</p>
+                    <p className="eyebrow">Тандоо</p>
                     <h3 className="panel__title">Упай журналы</h3>
                   </div>
 
@@ -1692,7 +1797,7 @@ const App = () => {
                     </div>
                     <strong>{division.playersCount} оюнчу</strong>
                     <p>Этап: {division.stageLabel}</p>
-                    <p>Лидер: {division.topLabel}</p>
+                    <p>Алдыңкы: {division.topLabel}</p>
                   </button>
                 ))}
               </div>
@@ -1715,7 +1820,7 @@ const App = () => {
                           <div>
                             <h4>{player.name}</h4>
                             <p>
-                              № {playerPositionMap[player.id] ?? '—'} • {player.phone || 'Телефон жок'}
+                              № {playerPositionMap[player.id] ?? '—'} • {player.laneLetter || '—'} • {player.phone || 'Телефон жок'}
                             </p>
                           </div>
                           <strong>{calculateTotal(player.id)}</strong>
@@ -1847,7 +1952,7 @@ const App = () => {
                         <th>#</th>
                         <th>Катышуучу</th>
                         {ROUNDS.map((round) => (
-                          <th key={round}>R{round}</th>
+                          <th key={round}>A{round}</th>
                         ))}
                         <th>Жалпы</th>
                       </tr>
@@ -1965,6 +2070,14 @@ const App = () => {
                         <strong>{player.phone || 'Азырынча кошулган эмес'}</strong>
                       </div>
                       <div className="player-data-field">
+                        <span>Бөлмө тамгасы</span>
+                        <strong>{player.laneLetter || '—'}</strong>
+                      </div>
+                      {false && <div className="player-data-field">
+                        <span>Пароль</span>
+                        <strong>{player.password || 'Коюлган эмес'}</strong>
+                      </div>}
+                      <div className="player-data-field">
                         <span>Жынысы</span>
                         <strong>
                           {player.gender === 'male'
@@ -2051,23 +2164,41 @@ const App = () => {
                     <span className="division-card__stage">Топ-{competitionDivisions[division.id]?.playoffMode || 16}</span>
                   </div>
                   <strong>{division.playoffCount} оюнчу тандалат</strong>
+                  <p>Өтөт: {division.playoffCount} / {division.playersCount}</p>
                   <p>Этап: {division.stageLabel}</p>
-                  <p>Лидер: {division.topLabel}</p>
+                  <p>Алдыңкы: {division.topLabel}</p>
                 </button>
               ))}
             </div>
 
+            <div className="rating-summary-strip">
+              <span className="rating-summary-strip__item">
+                Тандалган категория: <strong>{activeDivisionLabel}</strong>
+              </span>
+              <span className="rating-summary-strip__item">
+                Өтүү чеги: <strong>Топ-{playoffMode}</strong>
+              </span>
+              <span className="rating-summary-strip__item">
+                Өтүп жаткандар: <strong>{Math.min(playoffEligiblePlayers.length, playoffMode)}</strong> / {playoffEligiblePlayers.length}
+              </span>
+            </div>
+
             <div className="rating-list">
               {playoffEligiblePlayers.map((player, index) => (
-                <article key={player.id} className={`rating-card ${index < playoffMode ? 'rating-card--selected' : ''}`}>
+                <article key={player.id} className={`rating-card ${index < playoffMode ? 'rating-card--selected' : 'rating-card--waiting'}`}>
                   <div className="rating-card__left">
                     <div className="rating-badge">{index + 1}</div>
                     <div>
                       <h4>{player.name}</h4>
-                      <p>{index < playoffMode ? 'Торго кирет' : 'Күтүү тизмеси'}</p>
+                      <p>{index < playoffMode ? 'Торго кирет' : 'Азырынча өтпөйт'}</p>
                     </div>
                   </div>
-                  <strong>{calculateTotal(player.id)}</strong>
+                  <div className="rating-card__right">
+                    <span className={`rating-status-pill ${index < playoffMode ? 'rating-status-pill--in' : 'rating-status-pill--out'}`}>
+                      {index < playoffMode ? 'Өтөт' : 'Өтпөйт'}
+                    </span>
+                    <strong>{calculateTotal(player.id)}</strong>
+                  </div>
                 </article>
               ))}
             </div>
@@ -2104,7 +2235,7 @@ const App = () => {
                   </div>
                   <strong>{division.playoffCount} оюнчу тордо</strong>
                   <p>Этап: {division.stageLabel}</p>
-                  <p>Лидер: {division.topLabel}</p>
+                  <p>Алдыңкы: {division.topLabel}</p>
                 </button>
               ))}
             </div>
@@ -2247,7 +2378,7 @@ const App = () => {
               style={reportSheetLayout.style}
             >
               <div className="report-sheet__topline">
-                <span>Расмий отчет</span>
+                <span>Расмий баяндама</span>
                 <span>Күнү: {reportDate}</span>
               </div>
 
@@ -2259,7 +2390,7 @@ const App = () => {
 
               <section className="report-sheet__body">
                 <div className="report-section-heading">
-                  <span>Турнирдик сетка</span>
+                  <span>Мелдештик тор</span>
                 </div>
                 <div className="report-bracket-layout">
                   <div className="report-bracket-layout__board">
