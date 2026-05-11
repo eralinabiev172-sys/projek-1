@@ -402,6 +402,7 @@ const TargetIcon = ({ size = 20 }) => (
 
 function App() {
   const [activeSection, setActiveSection] = useState(null)
+  const [ratingDivision, setRatingDivision] = useState('male')
   const [registrationMessage, setRegistrationMessage] = useState('')
   const [loginMessage, setLoginMessage] = useState('')
   const [scoreMessage, setScoreMessage] = useState('')
@@ -1209,8 +1210,30 @@ function App() {
             <div className="rating-board">
               {ratingPlayers.length > 0 ? (
                 <div className="rating-sections">
-                  <RatingSectionQualified title="Эркек" players={maleRatingPlayers} emptyLabel="Эркек катышуучулар азырынча жок." prefix="male" playoffMode={malePlayoffMode} />
-                  <RatingSectionQualified title="Айым" players={femaleRatingPlayers} emptyLabel="Айым катышуучулар азырынча жок." prefix="female" playoffMode={femalePlayoffMode} />
+                  <div className="rating-division-switch" role="tablist" aria-label="Рейтинг боюнча бөлүм тандоо">
+                    <button
+                      type="button"
+                      className={`tab-button ${ratingDivision === 'male' ? 'tab-button--active' : ''}`}
+                      onClick={() => setRatingDivision('male')}
+                      aria-pressed={ratingDivision === 'male'}
+                    >
+                      Эркек
+                    </button>
+                    <button
+                      type="button"
+                      className={`tab-button ${ratingDivision === 'female' ? 'tab-button--active' : ''}`}
+                      onClick={() => setRatingDivision('female')}
+                      aria-pressed={ratingDivision === 'female'}
+                    >
+                      Айым
+                    </button>
+                  </div>
+                  <div className={`rating-section-slot ${ratingDivision === 'male' ? 'rating-section-slot--active' : ''}`}>
+                    <RatingSectionQualified title="Эркек" players={maleRatingPlayers} emptyLabel="Эркек катышуучулар азырынча жок." prefix="male" playoffMode={malePlayoffMode} />
+                  </div>
+                  <div className={`rating-section-slot ${ratingDivision === 'female' ? 'rating-section-slot--active' : ''}`}>
+                    <RatingSectionQualified title="Айым" players={femaleRatingPlayers} emptyLabel="Айым катышуучулар азырынча жок." prefix="female" playoffMode={femalePlayoffMode} />
+                  </div>
                   <div className="rating-list" style={{ display: 'none' }}>
                     {ratingPlayers.map((player, index) => (
                     <article

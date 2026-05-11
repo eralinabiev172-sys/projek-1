@@ -32,7 +32,7 @@ const DEFAULT_PLAYOFF_FINAL_ROUNDS = {
 const COMPETITION_DIVISIONS = [
   { id: 'all', label: 'Баары' },
   { id: 'male', label: 'Эркек' },
-  { id: 'female', label: 'Аял' },
+  { id: 'female', label: 'Айым' },
 ];
 const DEFAULT_COMPETITION_DIVISION = 'all';
 
@@ -124,12 +124,12 @@ const playoffStageTitles = {
 const PLAYOFF_DIVISIONS = [
   { id: 'all', label: 'Баары' },
   { id: 'male', label: 'Эркек' },
-  { id: 'female', label: 'Аял' },
+  { id: 'female', label: 'Айым' },
 ];
 const PARTICIPANT_FILTERS = [
   { id: 'all', label: 'Баары' },
   { id: 'male', label: 'Эркек' },
-  { id: 'female', label: 'Аял' },
+  { id: 'female', label: 'Айым' },
 ];
 
 const createMatch = (id, p1, p2, isFinal = false) => ({
@@ -964,7 +964,7 @@ const App = () => {
       return true;
     }
 
-    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'аял' : '';
+    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'Айым' : '';
 
     return [player.name || '', player.phone || '', genderLabel]
       .join(' ')
@@ -982,7 +982,7 @@ const App = () => {
       return true;
     }
 
-    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'аял' : '';
+    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'Айым' : '';
 
     return [player.name || '', player.phone || '', genderLabel]
       .join(' ')
@@ -994,7 +994,7 @@ const App = () => {
       return false;
     }
 
-    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'аял' : '';
+    const genderLabel = player.gender === 'male' ? 'эркек' : player.gender === 'female' ? 'Айым' : '';
 
     return [player.name || '', player.phone || '', genderLabel]
       .join(' ')
@@ -1023,7 +1023,7 @@ const App = () => {
     viewDivision === 'all'
       ? [
           { id: 'male', label: 'Эркек', players: sortPlayersForJournal(orderedPlayers.filter((player) => player.gender === 'male')) },
-          { id: 'female', label: 'Аял', players: sortPlayersForJournal(orderedPlayers.filter((player) => player.gender === 'female')) },
+          { id: 'female', label: 'Айым', players: sortPlayersForJournal(orderedPlayers.filter((player) => player.gender === 'female')) },
         ].filter((group) => group.players.length > 0)
       : [{ id: viewDivision, label: activeDivisionLabel, players: filteredJournalPlayers }];
   const playoffStages = visibleStageKeys.map((stageKey) => ({
@@ -1570,7 +1570,7 @@ const App = () => {
             <p className="eyebrow">Админ режими</p>
             <h2 className="hero-card__title">{tournamentName}</h2>
             <p className="hero-card__text">
-              Админ үчүн негизги жол: оюнчуларды кошуу, журналды жүргүзүү, рейтингди көзөмөлдөө, анан эркек жана аял бөлүмдөрү үчүн өз-өзүнчө плей-офф ачуу.
+              Админ үчүн негизги жол: оюнчуларды кошуу, журналды жүргүзүү, рейтингди көзөмөлдөө, анан эркек жана Айым бөлүмдөрү үчүн өз-өзүнчө плей-офф ачуу.
             </p>
           </div>
 
@@ -1584,7 +1584,7 @@ const App = () => {
               <strong>{malePlayers.length}</strong>
             </div>
             <div className="stat-chip">
-              <span className="stat-chip__label">Аял</span>
+              <span className="stat-chip__label">Айым</span>
               <strong>{femalePlayers.length}</strong>
             </div>
             <div className="stat-chip">
@@ -1760,7 +1760,7 @@ const App = () => {
                         checked={newPlayerGender === 'female'}
                         onChange={(event) => setNewPlayerGender(event.target.value)}
                       />
-                      <span>Аял</span>
+                      <span>Айым</span>
                     </label>
                   </div>
 
@@ -1807,7 +1807,7 @@ const App = () => {
                       <p className="player-card__meta">{player.phone || 'Телефон кошула элек'}</p>
                       <p className="player-card__meta">Бөлмө тамгасы: {player.laneLetter || '—'}</p>
                       <p className="player-card__meta">
-                        {player.gender === 'male' ? 'Эркек' : player.gender === 'female' ? 'Аял' : 'Жынысы кошула элек'}
+                        {player.gender === 'male' ? 'Эркек' : player.gender === 'female' ? 'Айым' : 'Жынысы кошула элек'}
                       </p>
                     </div>
                     <button type="button" onClick={() => removePlayer(player.id)} className="icon-button" aria-label="Катышуучуну өчүрүү">
@@ -2122,7 +2122,7 @@ const App = () => {
               </div>
               <div className="panel__header-actions">
                 <div className="pill">Эркек: {malePlayersCount}</div>
-                <div className="pill">Аял: {femalePlayersCount}</div>
+                <div className="pill">Айым: {femalePlayersCount}</div>
                 <button type="button" className="secondary-button" onClick={clearPlayerDirectory}>
                   Тизмени тазалоо
                 </button>
@@ -2195,7 +2195,7 @@ const App = () => {
                           {player.gender === 'male'
                             ? 'Эркек'
                             : player.gender === 'female'
-                              ? 'Аял'
+                              ? 'Айым'
                               : player.gender || 'Азырынча кошулган эмес'}
                         </strong>
                       </div>

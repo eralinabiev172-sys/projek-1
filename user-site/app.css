@@ -1153,6 +1153,14 @@ body {
   align-items: start;
 }
 
+.rating-division-switch {
+  display: none;
+}
+
+.rating-section-slot {
+  min-width: 0;
+}
+
 .rating-group {
   display: grid;
   gap: 12px;
@@ -1171,6 +1179,25 @@ body {
 @media (max-width: 900px) {
   .rating-sections {
     grid-template-columns: 1fr;
+  }
+
+  .rating-division-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .rating-division-switch .tab-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .rating-section-slot {
+    display: none;
+  }
+
+  .rating-section-slot--active {
+    display: block;
   }
 }
 
