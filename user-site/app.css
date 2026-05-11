@@ -543,36 +543,85 @@ body {
 
 .target-squad-strip__list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .target-squad-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(248, 250, 252, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(250, 252, 255, 0.96), rgba(241, 245, 249, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .target-squad-card--current {
-  border-color: rgba(37, 99, 235, 0.28);
-  background: rgba(219, 234, 254, 0.62);
+  border-color: rgba(37, 99, 235, 0.26);
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.88), rgba(255, 255, 255, 0.97));
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.1);
 }
 
 .target-squad-card__body {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .target-squad-card__body strong {
   font-size: 0.95rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .target-squad-card__body span {
   color: var(--text-muted);
   font-size: 0.82rem;
+}
+
+.target-squad-card__scores {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
+
+.target-squad-score {
+  min-width: 58px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.88);
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.target-squad-score--filled {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(239, 246, 255, 0.96);
+}
+
+.target-squad-score--total {
+  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(248, 250, 252, 0.98);
+}
+
+.target-squad-score__label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.target-squad-score strong {
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-primary);
 }
 
 .playoff-score-panel {
@@ -1341,6 +1390,21 @@ body {
   .target-player-card__header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .target-squad-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .target-squad-card__scores {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    padding-left: 46px;
+  }
+
+  .target-squad-score {
+    flex: 1 1 0;
   }
 
   .target-rounds-grid {

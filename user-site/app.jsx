@@ -113,7 +113,7 @@ const LETTER_SEQUENCE = ['A', 'B', 'C', 'D']
 const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length]
 const getTargetNumber = (entryNumber) => Math.floor((Math.max(Number(entryNumber) || 1, 1) - 1) / TARGET_GROUP_SIZE) + 1
 const getPlayerRoundScore = (scores, playerId, round) => scores?.[playerId]?.[round] ?? ''
-const getGenderLabel = (gender) => (gender === 'female' ? 'Аял' : 'Эркек')
+const getGenderLabel = (gender) => (gender === 'female' ? 'Айым' : 'Эркек')
 const normalizePasswordProtectionEnabled = (value) => (typeof value === 'boolean' ? value : DEFAULT_PASSWORD_PROTECTION_ENABLED)
 const sanitizeNonNegativeNumber = (value) => {
   const digitsOnly = value.replace(/[^\d]/g, '').slice(0, 2)
@@ -202,6 +202,14 @@ const saveRegistrationLock = () => {
   }
 
   window.localStorage.setItem(PLAYER_REGISTRATION_LOCK_KEY, 'true')
+}
+
+const clearRegistrationLock = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.removeItem(PLAYER_REGISTRATION_LOCK_KEY)
 }
 
 const buildPlayerNumberBook = (players, savedBook = {}) => {
@@ -547,7 +555,7 @@ function App() {
   const hasSubmittedCurrentRound = currentRoundScore !== '' && currentRoundScore !== null && currentRoundScore !== undefined
   const isJournalLocked = activeCompetitionState.playoffStage !== 'none'
   const isRegistered = Boolean(selectedPlayer)
-  const playerDivisionLabel = selectedPlayer?.gender === 'female' ? 'Аял' : 'Эркек'
+  const playerDivisionLabel = selectedPlayer?.gender === 'female' ? 'Айым' : 'Эркек'
   const playerJournalStatusLabel = isJournalLocked ? 'Жабык' : `Ачык A${activeScoreRound}`
   const playerPlayoffStatusLabel = playerPlayoffMatch
     ? activeCompetitionState.playoffStage === 'final'
@@ -579,14 +587,17 @@ function App() {
     if (hasLoadedTournamentState && hasSuccessfulTournamentSync && !selectedPlayer) {
       setRegisteredPlayer(null)
       clearRegisteredPlayer()
+      setRegistrationLocked(false)
+      clearRegistrationLock()
       setRegistrationForm(initialRegistrationForm)
       setLoginForm(initialLoginForm)
       setScoreForm(initialScoreForm)
       setPlayoffScoreForm(initialPlayoffScoreForm)
-      setRegistrationMessage('')
+      setRegistrationMessage('Админ тизмесинде бул оюнчунун аты жок. Кайра Катталуу жеткиликтүү.')
       setLoginMessage('')
       setScoreMessage('')
       setPlayoffScoreMessage('')
+      setActiveSection('register')
     }
   }, [hasLoadedTournamentState, hasSuccessfulTournamentSync, registeredPlayer, selectedPlayer])
 
@@ -818,7 +829,7 @@ function App() {
 
       setTournamentState(nextState)
       setScoreForm((current) => ({ ...initialScoreForm, playerId: current.playerId }))
-      setScoreMessage(`Упай журналга жазылды. Азыр ачык раунд: ${nextState.scoreSubmission.activeRound}.`)
+      setScoreMessage(`Упай журналга жазылды. Азыр ачык айлампа: ${nextState.scoreSubmission.activeRound}.`)
     } catch (error) {
       setScoreMessage(error.message || 'Упайды жөнөтүү мүмкүн болгон жок.')
     }
@@ -951,7 +962,7 @@ function App() {
             <p className="eyebrow">Жандуу маалымат</p>
             <h2 className="hero-card__title">{tournamentState.tournamentName}</h2>
             <p className="hero-card__text">
-              Бул жерде катышуучулар катталып, админ-панелде жаңыртылган рейтингди жана плей-офф жыйынтыктарын түз көрө алышат.
+              Бул жерде катышуучулар катталып, админ-панелде жаңыртылган даражаны жана элек жыйынтыктарын түз көрө алышат.
             </p>
           </div>
 
@@ -1000,11 +1011,7 @@ function App() {
               <strong>{playerDivisionLabel}</strong>
             </article>
             <article className="player-status-card">
-              <span className="player-status-card__label">Менин тамгам</span>
-              <strong>{selectedTargetMeta?.laneLetter || selectedPlayer?.laneLetter || '—'}</strong>
-            </article>
-            <article className="player-status-card">
-              <span className="player-status-card__label">Журнал</span>
+              <span className="player-status-card__label">Тандоо элек</span>
               <strong>{playerJournalStatusLabel}</strong>
             </article>
             <article className="player-status-card">
@@ -1012,11 +1019,15 @@ function App() {
               <strong>{selectedPlayerTotal}</strong>
             </article>
             <article className="player-status-card">
-              <span className="player-status-card__label">Менин бутам</span>
+              <span className="player-status-card__label">бутам</span>
               <strong>{selectedTargetNumber ? `#${selectedTargetNumber}` : '-'}</strong>
             </article>
             <article className="player-status-card">
-              <span className="player-status-card__label">Менин торум</span>
+              <span className="player-status-card__label">Тайпам</span>
+              <strong>{selectedTargetMeta?.laneLetter || selectedPlayer?.laneLetter || '—'}</strong>
+            </article>
+            <article className="player-status-card">
+              <span className="player-status-card__label">Элек</span>
               <strong>{playerPlayoffStatusLabel}</strong>
             </article>
           </section>
@@ -1107,7 +1118,7 @@ function App() {
                       onChange={handleRegistrationChange}
                       disabled={Boolean(registeredPlayer)}
                     />
-                    <span>Аял</span>
+                    <span>Айым</span>
                   </label>
                 </div>
               </div>
@@ -1199,7 +1210,7 @@ function App() {
               {ratingPlayers.length > 0 ? (
                 <div className="rating-sections">
                   <RatingSectionQualified title="Эркек" players={maleRatingPlayers} emptyLabel="Эркек катышуучулар азырынча жок." prefix="male" playoffMode={malePlayoffMode} />
-                  <RatingSectionQualified title="Аял" players={femaleRatingPlayers} emptyLabel="Аял катышуучулар азырынча жок." prefix="female" playoffMode={femalePlayoffMode} />
+                  <RatingSectionQualified title="Айым" players={femaleRatingPlayers} emptyLabel="Айым катышуучулар азырынча жок." prefix="female" playoffMode={femalePlayoffMode} />
                   <div className="rating-list" style={{ display: 'none' }}>
                     {ratingPlayers.map((player, index) => (
                     <article
@@ -1247,7 +1258,7 @@ function App() {
               </div>
 
               <div className="info-strip">
-                <span>Бул жерде сиз өз плей-офф беттешиңиз үчүн упай жибере аласыз.</span>
+                <span>Бул жерде сиз өз Жеке элек беттешиңиз үчүн упай жибере аласыз.</span>
                 <span>Админ ачкан активдүү этапка гана жазуу мүмкүн.</span>
               </div>
 
@@ -1281,7 +1292,7 @@ function App() {
                 <div className="note-card field--full">
                   {playerPlayoffMatch
                     ? `Активдүү беттеш: ${playoffOpponent?.name || '—'}. ${activeCompetitionState.playoffStage === 'final' ? `A${currentPlayoffRound} үчүн` : ''} сиздин азыркы мааниниз: ${currentPlayoffScore === '' ? 'жок' : currentPlayoffScore}.`
-                    : 'Админ сизди активдүү плей-офф беттешке чыгарганда ошол жерден упай жаза аласыз.'}
+                    : 'Админ сизди активдүү Жеке элек беттешке чыгарганда ошол жерден упай жаза аласыз.'}
                 </div>
 
                 <button type="submit" className="primary-button field--full" disabled={hasSubmittedPlayoffScore || !playerPlayoffMatch}>
@@ -1324,7 +1335,7 @@ function App() {
                 )}
               </div>
             ) : (
-              <div className="empty-state">Админ-панелде плей-офф азырынча түзүлгөн жок.</div>
+              <div className="empty-state">Админ-панелде Жеке элек азырынча түзүлгөн жок.</div>
             )}
           </section>
         )}
@@ -1341,8 +1352,8 @@ function App() {
 
             <div className="info-strip">
               <span>Упай дароо админ журналында көрүнөт.</span>
-              <span>Кийинки раунд админ ачмайынча бул жерден башка раундга өтүү мүмкүн эмес.</span>
-              <span>Бул бетте сиздин мишенедеги гана 4 оюнчунун журналдагы упайлары корунот.</span>
+              <span>Кийинки айлампа админ ачмайынча бул жерден башка айлампага өтүү мүмкүн эмес.</span>
+              <span>Бул бетте сиздин бутадагы гана 4 оюнчунун журналдагы упайлары көрүнөт.</span>
             </div>
 
             <TargetGroupPanel
@@ -1380,7 +1391,7 @@ function App() {
 
               <div className="note-card field--full">
                 {selectedPlayer
-                  ? `Азыр ачык раунд: ${activeScoreRound}. Бул ат үчүн ушул раунддагы журналдагы маани: ${currentRoundScore === '' ? 'жок' : currentRoundScore}.`
+                  ? `Азыр ачык айлампа: ${activeScoreRound}. Сиз үчүн ушул айлампадагы журналдагы маани: ${currentRoundScore === '' ? 'жок' : currentRoundScore}.`
                   : 'Адегенде Катталуу бөлүмүндө атыңызды сактаңыз. Ошондон кийин бул жерде ат автоматтык чыгат.'}
               </div>
 
@@ -1477,6 +1488,9 @@ const TargetGroupPanel = ({ selectedPlayerId, targetNumber, players, scores, act
           {players.map((player) => {
             const isCurrentPlayer = player.id === selectedPlayerId
             const targetMeta = targetMap?.[player.id]
+            const playerRoundScore = getPlayerRoundScore(scores, player.id, activeRound)
+            const hasRoundScore = playerRoundScore !== '' && playerRoundScore !== null && playerRoundScore !== undefined
+            const playerTotal = calculateTotal(scores, player.id)
 
             return (
               <article
@@ -1487,6 +1501,16 @@ const TargetGroupPanel = ({ selectedPlayerId, targetNumber, players, scores, act
                 <div className="target-squad-card__body">
                   <strong>{player.name}</strong>
                   <span>Бута #{targetMeta?.targetNumber || getTargetNumber(player.entryNumber)}</span>
+                </div>
+                <div className="target-squad-card__scores">
+                  <div className={`target-squad-score ${hasRoundScore ? 'target-squad-score--filled' : ''}`}>
+                    <span className="target-squad-score__label">A{activeRound}</span>
+                    <strong>{hasRoundScore ? playerRoundScore : '-'}</strong>
+                  </div>
+                  <div className="target-squad-score target-squad-score--total">
+                    <span className="target-squad-score__label">Жалпы</span>
+                    <strong>{playerTotal}</strong>
+                  </div>
                 </div>
               </article>
             )
