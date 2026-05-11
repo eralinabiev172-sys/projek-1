@@ -716,9 +716,21 @@
   font-weight: 700;
 }
 
+.score-table__target {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .score-table__total {
   font-weight: 800;
   color: #2563eb;
+}
+
+.score-table__group-row td {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1e3a8a;
+  font-weight: 800;
+  text-align: left;
 }
 
 .submission-feed {
@@ -1291,8 +1303,12 @@
   width: 7%;
 }
 
+.journal-sheet__col--target {
+  width: 12%;
+}
+
 .journal-sheet__col--name {
-  width: 35%;
+  width: 28%;
 }
 
 .journal-sheet__col--round {
@@ -1336,6 +1352,13 @@
 .journal-sheet__total {
   font-weight: 800;
   color: #1d4ed8;
+}
+
+.journal-sheet__group-row td {
+  font-weight: 800;
+  text-align: left;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1e3a8a;
 }
 
 .report-sheet {
@@ -2967,8 +2990,12 @@
     width: 6%;
   }
 
+  .journal-sheet__col--target {
+    width: 12%;
+  }
+
   .journal-sheet__col--name {
-    width: 39%;
+    width: 27%;
   }
 
   .journal-sheet__col--round {

@@ -6,6 +6,7 @@ const STORAGE_KEY = 'archery_v32_final_data_v5';
 const ROUNDS = [1, 2, 3, 4, 5, 6];
 const FINAL_PRIMARY_ROUNDS = 6;
 const FINAL_ROUNDS_COUNT = 12;
+const TARGET_GROUP_SIZE = 4;
 const MAX_SCORE = 30;
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -157,6 +158,7 @@ const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '').slice(0,
 const sanitizePassword = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 4);
 const LETTER_SEQUENCE = ['A', 'B', 'C', 'D'];
 const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length];
+const getTargetNumber = (entryNumber) => Math.floor((Math.max(Number(entryNumber) || 1, 1) - 1) / TARGET_GROUP_SIZE) + 1;
 const sanitizeNonNegativeNumber = (value, maxLength = 2) => {
   const digitsOnly = String(value ?? '').replace(/[^\d]/g, '').slice(0, maxLength);
   if (!digitsOnly) {
@@ -256,6 +258,24 @@ const sortPlayersByEntryNumber = (players) =>
 
     return a.name.localeCompare(b.name);
   });
+
+const buildGenderTargetMap = (players) => {
+  const targetMap = {};
+  const sortedPlayers = sortPlayersByEntryNumber(players);
+
+  ['male', 'female'].forEach((gender) => {
+    sortedPlayers
+      .filter((player) => player.gender === gender)
+      .forEach((player, index) => {
+        targetMap[player.id] = {
+          laneLetter: LETTER_SEQUENCE[index % TARGET_GROUP_SIZE],
+          targetNumber: Math.floor(index / TARGET_GROUP_SIZE) + 1,
+        };
+      });
+  });
+
+  return targetMap;
+};
 
 const normalizeStoredPlayers = (players, savedBook = {}) => {
   const resolvedBook = buildPlayerNumberBook(players, savedBook);
@@ -887,13 +907,43 @@ const App = () => {
   };
 
   const orderedPlayers = sortPlayersByEntryNumber(players);
+  const journalTargetMap = buildGenderTargetMap(orderedPlayers);
   const malePlayers = orderedPlayers.filter((player) => player.gender === 'male');
   const femalePlayers = orderedPlayers.filter((player) => player.gender === 'female');
   const filteredOrderedPlayers = orderedPlayers.filter((player) => viewDivision === 'all' || player.gender === viewDivision);
+  const sortPlayersForJournal = (list) =>
+    [...list].sort((left, right) => {
+      const leftTarget = journalTargetMap[left.id]?.targetNumber ?? getTargetNumber(left.entryNumber);
+      const rightTarget = journalTargetMap[right.id]?.targetNumber ?? getTargetNumber(right.entryNumber);
+      if (leftTarget !== rightTarget) {
+        return leftTarget - rightTarget;
+      }
+
+      const leftLane = journalTargetMap[left.id]?.laneLetter || left.laneLetter || getLaneLetter(left.entryNumber);
+      const rightLane = journalTargetMap[right.id]?.laneLetter || right.laneLetter || getLaneLetter(right.entryNumber);
+      if (leftLane !== rightLane) {
+        return leftLane.localeCompare(rightLane);
+      }
+
+      const leftNumber = left.entryNumber ?? Number.MAX_SAFE_INTEGER;
+      const rightNumber = right.entryNumber ?? Number.MAX_SAFE_INTEGER;
+      if (leftNumber !== rightNumber) {
+        return leftNumber - rightNumber;
+      }
+
+      return (left.name || '').localeCompare(right.name || '');
+    });
+  const filteredJournalPlayers =
+    viewDivision === 'all'
+      ? [
+          ...sortPlayersForJournal(orderedPlayers.filter((player) => player.gender === 'male')),
+          ...sortPlayersForJournal(orderedPlayers.filter((player) => player.gender === 'female')),
+        ]
+      : sortPlayersForJournal(filteredOrderedPlayers);
   const rankedPlayers = [...players].sort((a, b) => calculateTotal(b.id) - calculateTotal(a.id));
   const filteredRankedPlayers = rankedPlayers.filter((player) => viewDivision === 'all' || player.gender === viewDivision);
   const playoffEligiblePlayers = filteredRankedPlayers;
-  const journalSheetLayout = getJournalSheetLayout(filteredOrderedPlayers.length);
+  const journalSheetLayout = getJournalSheetLayout(filteredJournalPlayers.length);
   const bracketStagesForSheet = getBracketStagesForSheet(bracket, playoffMode);
   const scoreSubmissionEntries = (scoreSubmission.entries || []).filter((entry) => {
     const player = players.find((item) => item.id === entry.playerId);
@@ -901,7 +951,7 @@ const App = () => {
   });
   const visibleStageKeys = getVisibleStageKeys(playoffMode);
   const playersPreviewCount = 3;
-  const playerPositionMap = Object.fromEntries(orderedPlayers.map((player, index) => [player.id, index + 1]));
+  const playerPositionMap = Object.fromEntries(filteredJournalPlayers.map((player, index) => [player.id, index + 1]));
   const normalizedParticipantsSearchQuery = participantsSearchQuery.trim().toLocaleLowerCase();
   const normalizedPlayerSearchQuery = playerSearchQuery.trim().toLocaleLowerCase();
   const normalizedJournalSearchQuery = journalSearchQuery.trim().toLocaleLowerCase();
@@ -939,7 +989,7 @@ const App = () => {
       .toLocaleLowerCase()
       .includes(normalizedPlayerSearchQuery);
   });
-  const journalSearchPlayers = filteredOrderedPlayers.filter((player) => {
+  const journalSearchPlayers = filteredJournalPlayers.filter((player) => {
     if (!normalizedJournalSearchQuery) {
       return false;
     }
@@ -969,6 +1019,13 @@ const App = () => {
     };
   });
   const activeDivisionLabel = COMPETITION_DIVISIONS.find((division) => division.id === viewDivision)?.label || 'Баары';
+  const journalSectionGroups =
+    viewDivision === 'all'
+      ? [
+          { id: 'male', label: 'Эркек', players: sortPlayersForJournal(orderedPlayers.filter((player) => player.gender === 'male')) },
+          { id: 'female', label: 'Аял', players: sortPlayersForJournal(orderedPlayers.filter((player) => player.gender === 'female')) },
+        ].filter((group) => group.players.length > 0)
+      : [{ id: viewDivision, label: activeDivisionLabel, players: filteredJournalPlayers }];
   const playoffStages = visibleStageKeys.map((stageKey) => ({
     stageKey,
     title: playoffStageTitles[stageKey] || stageMeta[stageKey].label,
@@ -1417,6 +1474,17 @@ const App = () => {
     setIsResetConfirmVisible(false);
   };
 
+  const restartJournal = () => {
+    setCompetitionDivisions(createDefaultCompetitionDivisions());
+    setScores({});
+    setScoreSubmission({ ...DEFAULT_SCORE_SUBMISSION, entries: [] });
+    setViewDivision(DEFAULT_COMPETITION_DIVISION);
+    setActiveTab('journal');
+    setJournalSearchQuery('');
+    setPrintTarget(null);
+    setIsMenuOpen(false);
+  };
+
   const handlePrintSheet = (target) => {
     setPrintTarget(target);
     window.setTimeout(() => {
@@ -1538,9 +1606,22 @@ const App = () => {
                   <p className="eyebrow">Турнир маалыматы</p>
                   <h3 className="panel__title">Негизги жөндөөлөр</h3>
                 </div>
-                <button type="button" onClick={() => setIsResetConfirmVisible(true)} className="ghost-button">
-                  <RefreshIcon size={16} /> Баарын тазалоо
-                </button>
+                <div className="panel__header-actions">
+                  <button
+                    type="button"
+                    className="secondary-button secondary-button--auto"
+                    onClick={() => {
+                      if (window.confirm('Журналды башынан баштайлыбы? Бардык упайлар өчүп, оюнчулар кайрадан 1-айлампадан упай жибере алышат.')) {
+                        restartJournal();
+                      }
+                    }}
+                  >
+                    <RefreshIcon size={16} /> Башынан баштоо
+                  </button>
+                  <button type="button" onClick={() => setIsResetConfirmVisible(true)} className="ghost-button">
+                    <RefreshIcon size={16} /> Баарын тазалоо
+                  </button>
+                </div>
               </div>
 
               <div className="form-grid">
@@ -1820,7 +1901,7 @@ const App = () => {
                           <div>
                             <h4>{player.name}</h4>
                             <p>
-                              № {playerPositionMap[player.id] ?? '—'} • {player.laneLetter || '—'} • {player.phone || 'Телефон жок'}
+                              № {playerPositionMap[player.id] ?? '—'} • Бута {journalTargetMap[player.id]?.targetNumber || getTargetNumber(player.entryNumber)} • {journalTargetMap[player.id]?.laneLetter || player.laneLetter || '—'} • {player.phone || 'Телефон жок'}
                             </p>
                           </div>
                           <strong>{calculateTotal(player.id)}</strong>
@@ -1854,6 +1935,7 @@ const App = () => {
                 <table className="score-table">
                   <thead>
                     <tr>
+                      <th>Бута</th>
                       <th>Катышуучу</th>
                       {ROUNDS.map((round) => (
                         <th key={round}>Айлампа {round}</th>
@@ -1862,25 +1944,39 @@ const App = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredOrderedPlayers.map((player) => (
-                      <tr key={player.id}>
-                        <td className="score-table__name">{player.name}</td>
-                        {ROUNDS.map((round) => (
-                          <td key={round}>
-                            <input
-                              type="text"
-                              className="table-input"
-                              value={scores[player.id]?.[round] ?? ''}
-                              onChange={(event) => updateScore(player.id, round, event.target.value)}
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              maxLength={2}
-                            />
+                    {journalSectionGroups.flatMap((group) => ([
+                      ...(viewDivision === 'all'
+                        ? [
+                            <tr key={`journal-group-${group.id}`} className="score-table__group-row">
+                              <td colSpan={ROUNDS.length + 3}>{group.label}</td>
+                            </tr>,
+                          ]
+                        : []),
+                      ...group.players.map((player) => (
+                        <tr key={player.id}>
+                          <td className="score-table__target">
+                            #{journalTargetMap[player.id]?.targetNumber || getTargetNumber(player.entryNumber)}
+                            {' / '}
+                            {journalTargetMap[player.id]?.laneLetter || player.laneLetter || '—'}
                           </td>
-                        ))}
-                        <td className="score-table__total">{calculateTotal(player.id)}</td>
-                      </tr>
-                    ))}
+                          <td className="score-table__name">{player.name}</td>
+                          {ROUNDS.map((round) => (
+                            <td key={round}>
+                              <input
+                                type="text"
+                                className="table-input"
+                                value={scores[player.id]?.[round] ?? ''}
+                                onChange={(event) => updateScore(player.id, round, event.target.value)}
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={2}
+                              />
+                            </td>
+                          ))}
+                          <td className="score-table__total">{calculateTotal(player.id)}</td>
+                        </tr>
+                      )),
+                    ]))}
                   </tbody>
                 </table>
               </div>
@@ -1941,6 +2037,7 @@ const App = () => {
                   <table className="journal-sheet__table">
                     <colgroup>
                       <col className="journal-sheet__col journal-sheet__col--index" />
+                      <col className="journal-sheet__col journal-sheet__col--target" />
                       <col className="journal-sheet__col journal-sheet__col--name" />
                       {ROUNDS.map((round) => (
                         <col key={round} className="journal-sheet__col journal-sheet__col--round" />
@@ -1950,6 +2047,7 @@ const App = () => {
                     <thead>
                       <tr>
                         <th>#</th>
+                        <th>Бута</th>
                         <th>Катышуучу</th>
                         {ROUNDS.map((round) => (
                           <th key={round}>A{round}</th>
@@ -1958,20 +2056,34 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredRankedPlayers.length > 0 ? (
-                        filteredRankedPlayers.map((player, index) => (
-                          <tr key={player.id}>
-                            <td>{index + 1}</td>
-                            <td className="journal-sheet__name">{player.name}</td>
-                            {ROUNDS.map((round) => (
-                              <td key={round}>{scores[player.id]?.[round] ?? 0}</td>
-                            ))}
-                            <td className="journal-sheet__total">{calculateTotal(player.id)}</td>
-                          </tr>
-                        ))
+                      {filteredJournalPlayers.length > 0 ? (
+                        journalSectionGroups.flatMap((group) => ([
+                          ...(viewDivision === 'all'
+                            ? [
+                                <tr key={`print-journal-group-${group.id}`} className="journal-sheet__group-row">
+                                  <td colSpan={ROUNDS.length + 4}>{group.label}</td>
+                                </tr>,
+                              ]
+                            : []),
+                          ...group.players.map((player) => (
+                            <tr key={player.id}>
+                              <td>{playerPositionMap[player.id] ?? '—'}</td>
+                              <td>
+                                #{journalTargetMap[player.id]?.targetNumber || getTargetNumber(player.entryNumber)}
+                                {' / '}
+                                {journalTargetMap[player.id]?.laneLetter || player.laneLetter || '—'}
+                              </td>
+                              <td className="journal-sheet__name">{player.name}</td>
+                              {ROUNDS.map((round) => (
+                                <td key={round}>{scores[player.id]?.[round] ?? 0}</td>
+                              ))}
+                              <td className="journal-sheet__total">{calculateTotal(player.id)}</td>
+                            </tr>
+                          )),
+                        ]))
                       ) : (
                         <tr>
-                          <td colSpan={ROUNDS.length + 3}>Катышуучулар жана упайлар азырынча киргизиле элек.</td>
+                          <td colSpan={ROUNDS.length + 4}>Катышуучулар жана упайлар азырынча киргизиле элек.</td>
                         </tr>
                       )}
                     </tbody>

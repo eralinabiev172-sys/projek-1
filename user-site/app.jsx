@@ -18,6 +18,7 @@ const FINAL_ROUNDS_COUNT = 12
 const TARGET_GROUP_SIZE = 4
 const QUALIFICATION_ROUNDS = [1, 2, 3, 4, 5, 6]
 const PLAYER_IDENTITY_KEY = 'archery_user_registered_player_v1'
+const PLAYER_REGISTRATION_LOCK_KEY = 'archery_user_registration_locked_v1'
 const DEFAULT_SCORE_SUBMISSION = {
   activeRound: 1,
   entries: [],
@@ -181,6 +182,26 @@ const clearRegisteredPlayer = () => {
   }
 
   window.localStorage.removeItem(PLAYER_IDENTITY_KEY)
+}
+
+const loadRegistrationLock = () => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    return window.localStorage.getItem(PLAYER_REGISTRATION_LOCK_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+const saveRegistrationLock = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(PLAYER_REGISTRATION_LOCK_KEY, 'true')
 }
 
 const buildPlayerNumberBook = (players, savedBook = {}) => {
@@ -381,6 +402,7 @@ function App() {
   const [hasLoadedTournamentState, setHasLoadedTournamentState] = useState(false)
   const [hasSuccessfulTournamentSync, setHasSuccessfulTournamentSync] = useState(false)
   const [registeredPlayer, setRegisteredPlayer] = useState(loadRegisteredPlayer)
+  const [registrationLocked, setRegistrationLocked] = useState(loadRegistrationLock)
   const [registrationForm, setRegistrationForm] = useState(initialRegistrationForm)
   const [loginForm, setLoginForm] = useState(initialLoginForm)
   const [scoreForm, setScoreForm] = useState(initialScoreForm)
@@ -433,6 +455,7 @@ function App() {
   const genderTargetMap = useMemo(() => buildGenderTargetMap(tournamentState.players), [tournamentState.players])
   const selectedTargetMeta = selectedPlayer ? genderTargetMap[selectedPlayer.id] || null : null
   const selectedTargetNumber = selectedTargetMeta?.targetNumber || null
+  const selectedPlayerTotal = selectedPlayer ? calculateTotal(tournamentState.scores, selectedPlayer.id) : 0
   const selectedTargetGroup = useMemo(() => {
     if (!selectedPlayer) {
       return []
@@ -533,7 +556,9 @@ function App() {
     : 'Жеке элек ачыла элек'
   const visibleSections = isRegistered
     ? sections.filter((section) => section.id !== 'register' && section.id !== 'login')
-    : sections.filter((section) => section.id === 'register' || section.id === 'login')
+    : registrationLocked
+      ? sections.filter((section) => section.id === 'login')
+      : sections.filter((section) => section.id === 'register' || section.id === 'login')
 
   useEffect(() => {
     if (!selectedPlayer) {
@@ -573,10 +598,15 @@ function App() {
       return
     }
 
+    if (registrationLocked && activeSection === 'register') {
+      setActiveSection('login')
+      return
+    }
+
     if (activeSection && activeSection !== 'register' && activeSection !== 'login') {
       setActiveSection(null)
     }
-  }, [activeSection, isRegistered])
+  }, [activeSection, isRegistered, registrationLocked])
 
   const handleRegistrationChange = ({ target }) => {
     const { name, value } = target
@@ -607,6 +637,12 @@ function App() {
 
   const handleRegistrationSubmit = async (event) => {
     event.preventDefault()
+
+    if (registrationLocked) {
+      setRegistrationMessage('Бул түзмөктөн кайра катталууга болбойт. Сураныч, "Кирүү" аркылуу гана кириңиз.')
+      setActiveSection('login')
+      return
+    }
 
     if (registeredPlayer?.playerId) {
       setRegistrationMessage(`Бул түзмөктөн биринчи сакталган оюнчу: ${registeredPlayer.name}. Кайра катталууга болбойт.`)
@@ -641,6 +677,8 @@ function App() {
       const identity = { playerId: existingPlayer.id, name: existingPlayer.name }
       setRegisteredPlayer(identity)
       saveRegisteredPlayer(identity)
+      saveRegistrationLock()
+      setRegistrationLocked(true)
       setRegistrationForm(initialRegistrationForm)
       setLoginForm({ fullName: existingPlayer.name })
       setRegistrationMessage('Катышуучу мурда катталган. Система сизди автоматтык киргизди.')
@@ -664,6 +702,8 @@ function App() {
         const identity = { playerId: savedPlayer.id, name: savedPlayer.name }
         setRegisteredPlayer(identity)
         saveRegisteredPlayer(identity)
+        saveRegistrationLock()
+        setRegistrationLocked(true)
         setActiveSection('scoreEntry')
       }
       setRegistrationForm(initialRegistrationForm)
@@ -853,11 +893,15 @@ function App() {
     setLoginForm(initialLoginForm)
     setScoreForm(initialScoreForm)
     setPlayoffScoreForm(initialPlayoffScoreForm)
-    setRegistrationMessage('Эски катталуу бул түзмөктөн өчүрүлдү. Эми кайра жаңыдан катталсаңыз болот.')
+    setRegistrationMessage(
+      registrationLocked
+        ? 'Бул түзмөктө катталуу сакталган. Эми кайра катталбайсыз, "Кирүү" аркылуу гана киресиз.'
+        : 'Эски катталуу бул түзмөктөн өчүрүлдү.',
+    )
     setLoginMessage('')
     setScoreMessage('')
     setPlayoffScoreMessage('')
-    setActiveSection(null)
+    setActiveSection(registrationLocked ? 'login' : null)
   }
 
   return (
@@ -932,13 +976,15 @@ function App() {
             <div className="panel__header">
               <div>
                 <p className="eyebrow">Катышуучу</p>
-                <h3 className="panel__title">Катталуу же кирүү тандаңыз</h3>
+                <h3 className="panel__title">{registrationLocked ? 'Кирүү тандаңыз' : 'Катталуу же кирүү тандаңыз'}</h3>
               </div>
               <div className="pill">Конок</div>
             </div>
 
             <div className="note-card">
-              Бул жерде форма автоматтык ачылбайт. Жогору жактагы `Катталуу` же `Кирүү` баскычын басыңыз.
+              {registrationLocked
+                ? 'Бул түзмөктөн катталуу мурун жасалган. Эми жогору жактагы `Кирүү` баскычы аркылуу гана кире аласыз.'
+                : 'Бул жерде форма автоматтык ачылбайт. Жогору жактагы `Катталуу` же `Кирүү` баскычын басыңыз.'}
             </div>
           </section>
         )}
@@ -960,6 +1006,10 @@ function App() {
             <article className="player-status-card">
               <span className="player-status-card__label">Журнал</span>
               <strong>{playerJournalStatusLabel}</strong>
+            </article>
+            <article className="player-status-card">
+              <span className="player-status-card__label">Жалпы упайым</span>
+              <strong>{selectedPlayerTotal}</strong>
             </article>
             <article className="player-status-card">
               <span className="player-status-card__label">Менин бутам</span>
