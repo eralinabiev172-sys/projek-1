@@ -2,7 +2,7 @@
   font-family: "Segoe UI", "Noto Sans", sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   background: #f8fbff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -21,6 +21,14 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  background: #f8fbff;
+  color: var(--text-primary, #0f172a);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+:root[data-theme='dark'] body {
+  background: #020617;
+  color: #e2e8f0;
 }
 
 button,

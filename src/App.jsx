@@ -1,6 +1,7 @@
-﻿import { useEffect, useState, useRef } from 'react';
+﻿import { useEffect, useEffectEvent, useState, useRef } from 'react';
 import './App.css';
 import { fetchTournamentState, saveTournamentState, registerTournamentPlayer } from '../shared/tournamentApi.js';
+import { useTheme } from '../shared/useTheme.js';
 
 const STORAGE_KEY = 'archery_v32_final_data_v5';
 const ROUNDS = [1, 2, 3, 4, 5, 6];
@@ -155,7 +156,6 @@ const createMatch = (id, p1, p2, isFinal = false) => ({
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase();
 const sanitizePlayerText = (value) => String(value ?? '').replace(/\s{2,}/g, ' ').trimStart();
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 10);
-const sanitizePassword = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 4);
 const LETTER_SEQUENCE = ['A', 'B', 'C', 'D'];
 const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length];
 const getTargetNumber = (entryNumber) => Math.floor((Math.max(Number(entryNumber) || 1, 1) - 1) / TARGET_GROUP_SIZE) + 1;
@@ -174,9 +174,10 @@ const normalizePlayoffFinalRounds = (value) => ({
   final34: ROUNDS.includes(Number(value?.final34)) ? Number(value.final34) : DEFAULT_PLAYOFF_FINAL_ROUND,
 });
 const normalizePasswordProtectionEnabled = (value) => (typeof value === 'boolean' ? value : DEFAULT_PASSWORD_PROTECTION_ENABLED);
-const isValidPassword = (value) => /^\d{4}$/.test(String(value ?? '').trim());
 const isStandardPlayoffShootOffActive = (match) =>
   Boolean(match && !match.isFinal && Number(match.s1) === Number(match.s2) && (match.submittedP1 || match.submittedP2 || match.submittedShootOffP1 || match.submittedShootOffP2));
+const getTimestamp = () => new Date().getTime();
+const createLocalPlayerId = () => `${getTimestamp()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const normalizeCompetitionState = (value) => ({
   playoffMode: [32, 16, 8, 4].includes(Number(value?.playoffMode)) ? Number(value.playoffMode) : 16,
@@ -485,6 +486,24 @@ const MenuIcon = (props) => (
   </Icon>
 );
 
+const ThemeIcon = ({ isDarkTheme, ...props }) => (
+  <Icon {...props}>
+    {isDarkTheme ? <path d="M12 3a6 6 0 1 0 9 9A9 9 0 1 1 12 3Z" /> : <circle cx="12" cy="12" r="4" />}
+    {!isDarkTheme && (
+      <>
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="m4.93 4.93 1.41 1.41" />
+        <path d="m17.66 17.66 1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="m6.34 17.66-1.41 1.41" />
+        <path d="m19.07 4.93-1.41 1.41" />
+      </>
+    )}
+  </Icon>
+);
+
 const normalizeMatchList = (stageKey, bracket) => {
   if (stageKey === 'final12' || stageKey === 'final34') {
     return bracket[stageKey] ? [bracket[stageKey]] : [];
@@ -658,6 +677,7 @@ const getReportSheetLayout = (playoffMode, bracketStagesForSheet, hasFinalMatche
 
 const App = () => {
   const initialState = loadInitialState();
+  const { theme, isDarkTheme, toggleTheme } = useTheme();
 
   const [tournamentName, setTournamentName] = useState(initialState.tournamentName);
   const [location, setLocation] = useState(initialState.location);
@@ -695,7 +715,7 @@ const App = () => {
   const reportDate = new Date().toLocaleDateString('ru-RU');
 
   const markLocalMutation = (durationMs = 15000) => {
-    const now = Date.now();
+    const now = getTimestamp();
     lastLocalMutationAtRef.current = now;
     preserveLocalChangesUntilRef.current = now + durationMs;
   };
@@ -769,13 +789,13 @@ const App = () => {
       return;
     }
 
-    const saveStartedAt = Date.now();
+    const saveStartedAt = getTimestamp();
     preserveLocalChangesUntilRef.current = saveStartedAt + 15000;
     saveTournamentState(nextState)
       .then(() => {
         setApiNotice('');
         if (lastLocalMutationAtRef.current <= saveStartedAt) {
-          preserveLocalChangesUntilRef.current = Date.now() + 1000;
+          preserveLocalChangesUntilRef.current = getTimestamp() + 1000;
         }
       })
       .catch((error) => {
@@ -812,7 +832,7 @@ const App = () => {
           return;
         }
 
-        if (Date.now() < preserveLocalChangesUntilRef.current) {
+        if (getTimestamp() < preserveLocalChangesUntilRef.current) {
           isRemoteHydratedRef.current = true;
           return;
         }
@@ -844,7 +864,7 @@ const App = () => {
     };
   }, []);
 
-  useEffect(() => {
+  const syncMissingPlayersToDirectory = useEffectEvent(() => {
     if (players.length === 0) {
       return;
     }
@@ -859,6 +879,14 @@ const App = () => {
 
       return normalizePlayerDirectory([...prev, ...missingPlayers]);
     });
+  });
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      syncMissingPlayersToDirectory();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [players]);
 
   const activeCompetitionState = competitionDivisions[viewDivision] || createEmptyCompetitionState();
@@ -1081,7 +1109,7 @@ const App = () => {
         const highestNumber = Math.max(0, ...Object.values(playerNumberBook || {}).map((value) => Number(value) || 0));
         const entryNumber = highestNumber + 1;
         const localPlayer = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: createLocalPlayerId(),
           name,
           phone,
           gender: newPlayerGender,
@@ -1089,8 +1117,8 @@ const App = () => {
           laneLetter: getLaneLetter(entryNumber),
         };
 
-        lastLocalMutationAtRef.current = Date.now();
-        preserveLocalChangesUntilRef.current = Date.now() + 15000;
+        lastLocalMutationAtRef.current = getTimestamp();
+        preserveLocalChangesUntilRef.current = getTimestamp() + 15000;
         setPlayers((prev) => normalizeStoredPlayers([...prev, localPlayer], playerNumberBook));
         setPlayerDirectory((prev) => normalizePlayerDirectory([...prev, localPlayer]));
         setPlayerNumberBook((prev) => ({
@@ -1156,8 +1184,8 @@ const App = () => {
     const nextNormalizedName = normalizePlayerName(nextName);
     const entryNumber = currentPlayer.entryNumber;
 
-    lastLocalMutationAtRef.current = Date.now();
-    preserveLocalChangesUntilRef.current = Date.now() + 15000;
+    lastLocalMutationAtRef.current = getTimestamp();
+    preserveLocalChangesUntilRef.current = getTimestamp() + 15000;
 
     setPlayers((prev) =>
       normalizeStoredPlayers(
@@ -1198,8 +1226,8 @@ const App = () => {
   const updateScore = (playerId, roundId, value) => {
     const sanitizedValue = sanitizeNonNegativeNumber(value);
     const score = Number.parseInt(sanitizedValue, 10);
-    lastLocalMutationAtRef.current = Date.now();
-    preserveLocalChangesUntilRef.current = Date.now() + 15000;
+    lastLocalMutationAtRef.current = getTimestamp();
+    preserveLocalChangesUntilRef.current = getTimestamp() + 15000;
     setScores((prev) => ({
       ...prev,
       [playerId]: {
@@ -1215,8 +1243,8 @@ const App = () => {
   };
 
   const removePlayerFromDirectory = (playerId) => {
-    lastLocalMutationAtRef.current = Date.now();
-    preserveLocalChangesUntilRef.current = Date.now() + 15000;
+    lastLocalMutationAtRef.current = getTimestamp();
+    preserveLocalChangesUntilRef.current = getTimestamp() + 15000;
     setPlayerDirectory((prev) => prev.filter((player) => player.id !== playerId));
 
     if (editingPlayerId === playerId) {
@@ -1507,15 +1535,28 @@ const App = () => {
           </div>
         </div>
 
-        <button
-          type="button"
-          className={`menu-toggle ${isMenuOpen ? 'menu-toggle--open' : ''}`}
-          aria-label="Менюну ачуу"
-          aria-expanded={isMenuOpen}
-          onClick={() => setIsMenuOpen((prev) => !prev)}
-        >
-          <MenuIcon size={20} />
-        </button>
+        <div className="topbar__utility">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Жарык режимге өтүү' : 'Караңгы режимге өтүү'}
+            title={theme === 'dark' ? 'Жарык режим' : 'Караңгы режим'}
+          >
+            <ThemeIcon size={18} isDarkTheme={isDarkTheme} />
+            <span>{theme === 'dark' ? 'Жарык' : 'Караңгы'}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`menu-toggle ${isMenuOpen ? 'menu-toggle--open' : ''}`}
+            aria-label="Менюну ачуу"
+            aria-expanded={isMenuOpen}
+            onClick={() => setIsMenuOpen((prev) => !prev)}
+          >
+            <MenuIcon size={20} />
+          </button>
+        </div>
 
         <div className={`topbar__actions ${isMenuOpen ? 'topbar__actions--open' : ''}`}>
           {tabs.map((tab) => (
@@ -1658,26 +1699,6 @@ const App = () => {
                   </div>
                 </div>
 
-                {false && <div className="field">
-                  <span className="field__label">Кирүү коргоосу</span>
-                  <div className="mode-switch">
-                    <button
-                      type="button"
-                      onClick={() => setPasswordProtectionEnabled(false)}
-                      className={`mode-switch__button ${!passwordProtectionEnabled ? 'mode-switch__button--active' : ''}`}
-                    >
-                      Пароль өчүк
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPasswordProtectionEnabled(true)}
-                      className={`mode-switch__button ${passwordProtectionEnabled ? 'mode-switch__button--active' : ''}`}
-                    >
-                      Пароль күйүк
-                    </button>
-                  </div>
-                </div>}
-
                 <div className="field-row field-row--accent">
                   <label className="field">
                     <span className="field__label">Башкы калыс</span>
@@ -1726,22 +1747,11 @@ const App = () => {
                       if (event.key === 'Enter') addPlayer();
                     }}
                   />
-                  {false && <input
-                    className="field__control"
-                    placeholder={passwordProtectionEnabled ? '4 орундуу пароль' : '4 орундуу пароль (милдеттүү эмес)'}
-                    value=""
-                    onChange={() => {}}
-                    inputMode="numeric"
-                    maxLength={4}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') addPlayer();
-                    }}
-                  />}
                 </div>
 
                 <div className="add-player-actions">
                   <div className="player-gender-switch">
-                    <label className="player-gender-option">
+                    <label className={`player-gender-option ${newPlayerGender === 'male' ? 'player-gender-option--selected' : ''}`}>
                       <input
                         type="radio"
                         name="admin-player-gender"
@@ -1752,7 +1762,7 @@ const App = () => {
                       <span>Эркек</span>
                     </label>
 
-                    <label className="player-gender-option">
+                    <label className={`player-gender-option ${newPlayerGender === 'female' ? 'player-gender-option--selected' : ''}`}>
                       <input
                         type="radio"
                         name="admin-player-gender"
@@ -2185,10 +2195,6 @@ const App = () => {
                         <span>Бөлмө тамгасы</span>
                         <strong>{player.laneLetter || '—'}</strong>
                       </div>
-                      {false && <div className="player-data-field">
-                        <span>Пароль</span>
-                        <strong>{player.password || 'Коюлган эмес'}</strong>
-                      </div>}
                       <div className="player-data-field">
                         <span>Жынысы</span>
                         <strong>

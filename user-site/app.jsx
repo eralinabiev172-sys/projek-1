@@ -1,7 +1,8 @@
 import './app.css'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { fetchTournamentState, registerTournamentPlayer, submitPlayerScore, submitPlayoffPlayerScore } from '../shared/tournamentApi.js'
+import { useTheme } from '../shared/useTheme.js'
 
 const EMPTY_BRACKET = {
   roundOf32: [],
@@ -73,14 +74,15 @@ const initialRegistrationForm = {
   fullName: '',
   phone: '',
   gender: 'male',
+  password: '',
 }
 
 const initialLoginForm = {
   fullName: '',
+  password: '',
 }
 
 const initialScoreForm = {
-  playerId: '',
   score: '',
 }
 
@@ -108,7 +110,6 @@ const MAX_PLAYER_SCORE = 30
 const normalizePlayerName = (name) => name.trim().toLocaleLowerCase()
 const sanitizePlayerName = (value) => value.replace(/[^\p{L}\s'-]/gu, '').replace(/\s{2,}/g, ' ')
 const sanitizePhone = (value) => value.replace(/\D/g, '').slice(0, 10)
-const sanitizePassword = (value) => value.replace(/\D/g, '').slice(0, 4)
 const LETTER_SEQUENCE = ['A', 'B', 'C', 'D']
 const getLaneLetter = (entryNumber) => LETTER_SEQUENCE[(Math.max(Number(entryNumber) || 1, 1) - 1) % LETTER_SEQUENCE.length]
 const getTargetNumber = (entryNumber) => Math.floor((Math.max(Number(entryNumber) || 1, 1) - 1) / TARGET_GROUP_SIZE) + 1
@@ -125,16 +126,13 @@ const sanitizeNonNegativeNumber = (value) => {
 }
 const isValidPlayerName = (value) => /^[\p{L}\s'-]+$/u.test(value.trim())
 const isValidPhone = (value) => /^\d+$/.test(value.trim())
-const isValidPassword = (value) => /^\d{4}$/.test(value.trim())
 const normalizePlayoffFinalRounds = (value) => ({
   final12: [1, 2, 3, 4, 5, 6].includes(Number(value?.final12)) ? Number(value.final12) : 1,
   final34: [1, 2, 3, 4, 5, 6].includes(Number(value?.final34)) ? Number(value.final34) : 1,
 })
-const findPlayerByName = (players, name) =>
-  players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(name))
 const findPlayerByCredentials = (players, fullName) =>
   players.find((player) => normalizePlayerName(player.name || '') === normalizePlayerName(fullName))
-const findPlayerForRegistration = (players, { fullName, phone, password }) =>
+const findPlayerForRegistration = (players, { fullName, phone }) =>
   players.find(
     (player) =>
       normalizePlayerName(player.name || '') === normalizePlayerName(fullName) ||
@@ -400,7 +398,26 @@ const TargetIcon = ({ size = 20 }) => (
   </svg>
 )
 
+const ThemeIcon = ({ size = 18, isDarkTheme = false }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+    {isDarkTheme ? <path d="M12 3a6 6 0 1 0 9 9A9 9 0 1 1 12 3Z" /> : <circle cx="12" cy="12" r="4" />}
+    {!isDarkTheme && (
+      <>
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="m4.93 4.93 1.41 1.41" />
+        <path d="m17.66 17.66 1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="m6.34 17.66-1.41 1.41" />
+        <path d="m19.07 4.93-1.41 1.41" />
+      </>
+    )}
+  </svg>
+)
+
 function App() {
+  const { theme, isDarkTheme, toggleTheme } = useTheme()
   const [activeSection, setActiveSection] = useState(null)
   const [ratingDivision, setRatingDivision] = useState('male')
   const [registrationMessage, setRegistrationMessage] = useState('')
@@ -489,7 +506,8 @@ function App() {
         ? 'female'
         : 'male'
   const activeCompetitionState = tournamentState.competitionDivisions?.[playerCompetitionDivision] || createEmptyCompetitionState()
-  const passwordProtectionEnabled = false
+  const passwordProtectionEnabled = tournamentState.passwordProtectionEnabled
+  const selectedPlayerId = selectedPlayer?.id || ''
 
   const playoffMatches = useMemo(() => getAllMatches(activeCompetitionState.bracket), [activeCompetitionState.bracket])
   const activeScoreRound = tournamentState.scoreSubmission?.activeRound || 1
@@ -569,18 +587,7 @@ function App() {
       ? sections.filter((section) => section.id === 'login')
       : sections.filter((section) => section.id === 'register' || section.id === 'login')
 
-  useEffect(() => {
-    if (!selectedPlayer) {
-      return
-    }
-
-    setScoreForm((current) => ({
-      ...current,
-      playerId: selectedPlayer.id,
-    }))
-  }, [selectedPlayer])
-
-  useEffect(() => {
+  const resetMissingRegisteredPlayer = useEffectEvent(() => {
     if (!registeredPlayer) {
       return
     }
@@ -600,9 +607,17 @@ function App() {
       setPlayoffScoreMessage('')
       setActiveSection('register')
     }
-  }, [hasLoadedTournamentState, hasSuccessfulTournamentSync, registeredPlayer, selectedPlayer])
+  })
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      resetMissingRegisteredPlayer()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [hasLoadedTournamentState, hasSuccessfulTournamentSync, registeredPlayer, selectedPlayer])
+
+  const syncActiveSectionState = useEffectEvent(() => {
     if (isRegistered) {
       if (activeSection === 'register' || activeSection === 'login') {
         setActiveSection('scoreEntry')
@@ -618,6 +633,14 @@ function App() {
     if (activeSection && activeSection !== 'register' && activeSection !== 'login') {
       setActiveSection(null)
     }
+  })
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      syncActiveSectionState()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
   }, [activeSection, isRegistered, registrationLocked])
 
   const handleRegistrationChange = ({ target }) => {
@@ -679,7 +702,7 @@ function App() {
       return
     }
 
-    if (false && passwordProtectionEnabled) {
+    if (passwordProtectionEnabled && !/^\d{4}$/.test(registrationForm.password.trim())) {
       setRegistrationMessage('Сырсөз так 4 цифрадан турушу керек.')
       return
     }
@@ -741,7 +764,7 @@ function App() {
       return
     }
 
-    if (passwordProtectionEnabled && !isValidPassword(password)) {
+    if (passwordProtectionEnabled && !/^\d{4}$/.test(loginForm.password.trim())) {
       setLoginMessage('Сырсөз так 4 цифра болушу керек.')
       return
     }
@@ -753,7 +776,7 @@ function App() {
 
     const matchedPlayer = findPlayerByCredentials(tournamentState.players, fullName)
     if (!matchedPlayer) {
-      setLoginMessage('Мындай 4 орундуу сырсөз менен катышуучу табылган жок.')
+      setLoginMessage('Мындай ат менен катышуучу табылган жок.')
       return
     }
 
@@ -790,12 +813,12 @@ function App() {
       return
     }
 
-    if (!scoreForm.playerId) {
+    if (!selectedPlayerId) {
       setScoreMessage('Оюнчуну тандаңыз.')
       return
     }
 
-    if (false && passwordProtectionEnabled) {
+    if (passwordProtectionEnabled) {
       setScoreMessage('Сырсөз табылган жок.')
       return
     }
@@ -823,13 +846,13 @@ function App() {
     try {
       const nextState = parseTournamentState(
         await submitPlayerScore({
-          playerId: scoreForm.playerId,
+          playerId: selectedPlayerId,
           score: scoreForm.score,
         }),
       )
 
       setTournamentState(nextState)
-      setScoreForm((current) => ({ ...initialScoreForm, playerId: current.playerId }))
+      setScoreForm(initialScoreForm)
       setScoreMessage(`Упай журналга жазылды. Азыр ачык айлампа: ${nextState.scoreSubmission.activeRound}.`)
     } catch (error) {
       setScoreMessage(error.message || 'Упайды жөнөтүү мүмкүн болгон жок.')
@@ -844,7 +867,7 @@ function App() {
       return
     }
 
-    if (false && passwordProtectionEnabled) {
+    if (passwordProtectionEnabled) {
       setPlayoffScoreMessage('Сырсөз табылган жок.')
       return
     }
@@ -925,17 +948,30 @@ function App() {
           <div className="brand-icon">
             <TargetIcon />
           </div>
-          <div>
+          <div className="brand-copy">
             <p className="eyebrow">Катышуучулар үчүн</p>
             <h1 className="brand-title">Жаа атуу платформасы</h1>
           </div>
         </div>
 
-        {isRegistered && (
-          <button type="button" className="secondary-button topbar__logout topbar__logout--mobile" onClick={handleResetRegistration}>
-            Чыгуу
+        <div className="topbar__utility">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Жарык режимге өтүү' : 'Караңгы режимге өтүү'}
+            title={theme === 'dark' ? 'Жарык режим' : 'Караңгы режим'}
+          >
+            <ThemeIcon isDarkTheme={isDarkTheme} />
+            <span>{theme === 'dark' ? 'Жарык' : 'Караңгы'}</span>
           </button>
-        )}
+
+          {isRegistered && (
+            <button type="button" className="secondary-button topbar__logout topbar__logout--mobile" onClick={handleResetRegistration}>
+              Чыгуу
+            </button>
+          )}
+        </div>
 
         <nav className="topbar__actions" aria-label="Бөлүмдөр менюсу">
           {visibleSections.map((section) => (
@@ -1063,7 +1099,7 @@ function App() {
                 />
               </label>
 
-              {false && <label className="field">
+              {passwordProtectionEnabled && <label className="field">
                 <span className="field__label">4 орундуу сырсөз</span>
                 <input
                   name="password"
@@ -1098,7 +1134,7 @@ function App() {
               <div className="field field--full">
                 <span className="field__label">Жынысы</span>
                 <div className="gender-row">
-                  <label className="gender-option">
+                  <label className={`gender-option ${registrationForm.gender === 'male' ? 'gender-option--selected' : ''}`}>
                     <input
                       type="radio"
                       name="gender"
@@ -1110,7 +1146,7 @@ function App() {
                     <span>Эркек</span>
                   </label>
 
-                  <label className="gender-option">
+                  <label className={`gender-option ${registrationForm.gender === 'female' ? 'gender-option--selected' : ''}`}>
                     <input
                       type="radio"
                       name="gender"
@@ -1394,7 +1430,7 @@ function App() {
                 <input className="field__control" value={registeredPlayer?.name || ''} readOnly placeholder="Адегенде катталуу керек" />
               </label>
 
-              <input type="hidden" name="playerId" value={scoreForm.playerId} readOnly />
+              <input type="hidden" name="playerId" value={selectedPlayerId} readOnly />
 
               <label className="field">
                 <span className="field__label">Упай</span>
@@ -1709,6 +1745,7 @@ const ReadOnlyFinalPlayer = ({ rounds, name, mainScore, extraScore, isWinner }) 
   </div>
 )
 
+// eslint-disable-next-line no-unused-vars
 const RatingSection = ({ title, players, emptyLabel, prefix }) => (
   <div className="rating-group">
     <div className="panel__header">
