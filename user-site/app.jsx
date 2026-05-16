@@ -416,6 +416,65 @@ const ThemeIcon = ({ size = 18, isDarkTheme = false }) => (
   </svg>
 )
 
+const GridIcon = ({ size = 22 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+    <rect x="14" y="3" width="7" height="7" rx="1.5" />
+    <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    <rect x="14" y="14" width="7" height="7" rx="1.5" />
+  </svg>
+)
+
+const TrophyIcon = ({ size = 22 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 3h8v3a4 4 0 0 1-8 0V3Z" />
+    <path d="M6 5H4a2 2 0 0 0 2 4h1" />
+    <path d="M18 5h2a2 2 0 0 1-2 4h-1" />
+    <path d="M12 13v4" />
+    <path d="M8 21h8" />
+    <path d="M9.5 17h5" />
+  </svg>
+)
+
+const UserIcon = ({ size = 22 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="4" />
+    <path d="M5 20a7 7 0 0 1 14 0" />
+  </svg>
+)
+
+const PenIcon = ({ size = 22 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m12 20 8-8" />
+    <path d="M19 7a2.1 2.1 0 0 0-3-3l-9 9-1 4 4-1Z" />
+  </svg>
+)
+
+const LoginIcon = ({ size = 22 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+    <path d="M10 17l5-5-5-5" />
+    <path d="M15 12H3" />
+  </svg>
+)
+
+const getBottomNavLabel = (section) => {
+  if (section.id === 'scoreEntry') return 'Упай'
+  if (section.id === 'playoff') return 'Жеке элек'
+  if (section.id === 'profile') return 'Профиль'
+  return section.label
+}
+
+const SectionNavIcon = ({ sectionId, size = 22 }) => {
+  if (sectionId === 'register') return <GridIcon size={size} />
+  if (sectionId === 'login') return <LoginIcon size={size} />
+  if (sectionId === 'profile') return <UserIcon size={size} />
+  if (sectionId === 'rating') return <TrophyIcon size={size} />
+  if (sectionId === 'scoreEntry') return <PenIcon size={size} />
+  if (sectionId === 'playoff') return <TargetIcon size={size} />
+  return <GridIcon size={size} />
+}
+
 function App() {
   const { theme, isDarkTheme, toggleTheme } = useTheme()
   const [activeSection, setActiveSection] = useState(null)
@@ -1472,7 +1531,10 @@ function App() {
             className={`tab-button ${activeSection === section.id ? 'tab-button--active' : ''}`}
             onClick={() => setActiveSection(section.id)}
           >
-            {section.label}
+            <span className="bottom-nav__icon" aria-hidden="true">
+              <SectionNavIcon sectionId={section.id} />
+            </span>
+            <span className="bottom-nav__label">{getBottomNavLabel(section)}</span>
           </button>
         ))}
       </nav>
